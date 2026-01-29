@@ -34,17 +34,34 @@ function assignDealerForRound(table) {
   const players = table.players.filter(p => !p.waiting);
   if (!players.length) return;
 
-  const dealerIndex = table.rtpStats.dealerIndex || 0;
+  const minDealerBalance = (table.minBet || table.defaultBet) * 10;
 
   // clear old dealer
   players.forEach(p => p.isDealer = false);
 
-  const dealer = players[dealerIndex % players.length];
+  let startIndex = table.rtpStats.dealerIndex || 0;
+  let dealer = null;
+
+  for (let i = 0; i < players.length; i++) {
+    const index = (startIndex + i) % players.length;
+    const candidate = players[index];
+
+    if (candidate.balance >= minDealerBalance) {
+      dealer = candidate;
+      table.rtpStats.dealerIndex = index; // lock dealer index
+      break;
+    }
+  }
+
+  if (!dealer) {
+    console.log("❌ NO VALID DEALER (insufficient balance)");
+    return;
+  }
+
   dealer.isDealer = true;
 
   console.log(`🃏 DEALER ASSIGNED → ${dealer.username}`);
 
-  // send to Unity immediately
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",
     dealer: {
@@ -53,6 +70,7 @@ function assignDealerForRound(table) {
     }
   });
 }
+
 
 function rotateDealer(table) {
   const activePlayers = table.players.filter(p => !p.waiting);

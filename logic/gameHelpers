@@ -1,7 +1,7 @@
 // ===== gameHelpers.js =====
 
 // Import the new Shan evaluation functions
-const { evaluateHand, compareHands } = require("./shanRules");
+const { evaluateHand, compareHands } = require("./shanRules");// new
 const { createDeck, shuffle } = require("./dealCards");
 
 /**

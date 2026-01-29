@@ -8,69 +8,91 @@ function registerStartGame(fn) {
 }
 
 function autoStart(table) {
-  console.log("🧪 autoStart()", {
-    roundInProgress: table.roundInProgress,
-    countdownInterval: !!table.countdownInterval,
-    betInterval: !!table.betInterval,
-    ready: table.players.map(p => p.ready)
-  });
-  
   if (!table || table.players.length === 0) return;
-  if (table.roundInProgress) return;
-  if (table.betInterval) return;
+  if (table.roundInProgress || table.betInterval) return;
 
   const realPlayers = table.players.filter(p => !p.isAi);
   if (realPlayers.length < 1) return;
-  if (table.players.length < 3) return;
+  if (table.players.length < 3) return; // Shan usually 5-8, but 3 to keep it moving
   if (!realPlayers.every(p => p.ready)) return;
 
-  console.log(`🔥 TABLE READY → STARTING GAME From GameFlow" table=${table.tableId} t=${Date.now()}`);
   startGameForTable(table);
 }
 
+/**
+ * Assigns dealer based on Shan Rules:
+ * 1. Must have 10x min bet.
+ * 2. Stays dealer until "Warning" rounds are finished or balance drops.
+ */
 function assignDealerForRound(table) {
   if (!table.rtpStats) return;
 
-  const players = table.players.filter(p => !p.waiting);
-  if (!players.length) return;
+  const activePlayers = table.players.filter(p => !p.waiting);
+  if (!activePlayers.length) return;
 
+  // Rule: 10x Min Bet required to hold the deck (e.g., 3,000 bet needs 30,000 balance)
   const minDealerBalance = (table.minBet || table.defaultBet) * 10;
 
-  // clear old dealer
-  players.forEach(p => p.isDealer = false);
+  // Check if current dealer is in "Warning" (ဝမ်တိန်) period
+  if (table.isWarningActive && table.dealerWarningRounds >= 3) {
+      console.log("🛑 Dealer finished 3-round warning period. Rotating...");
+      table.isWarningActive = false;
+      table.dealerWarningRounds = 0;
+      table.dealerStartBalance = 0;
+      rotateDealer(table); 
+  }
+
+  // Clear old dealer flags
+  activePlayers.forEach(p => p.isDealer = false);
 
   let startIndex = table.rtpStats.dealerIndex || 0;
   let dealer = null;
 
-  for (let i = 0; i < players.length; i++) {
-    const index = (startIndex + i) % players.length;
-    const candidate = players[index];
+  // Find next eligible player with enough balance
+  for (let i = 0; i < activePlayers.length; i++) {
+    const index = (startIndex + i) % activePlayers.length;
+    const candidate = activePlayers[index];
 
     if (candidate.balance >= minDealerBalance) {
       dealer = candidate;
-      table.rtpStats.dealerIndex = index; // lock dealer index
+      table.rtpStats.dealerIndex = index;
       break;
     }
   }
 
   if (!dealer) {
-    console.log("❌ NO VALID DEALER (insufficient balance)");
+    console.log("❌ NO VALID DEALER (Insufficient balance for 10x rule)");
     return;
   }
 
   dealer.isDealer = true;
 
-  console.log(`🃏 DEALER ASSIGNED → ${dealer.username} because of enough he has 10 times of min bet of ${table.tableName}`);
+  // Initialize dealer tracking for Warning (ဝမ်တိန်)
+  if (table.currentDealerName !== dealer.username) {
+      table.currentDealerName = dealer.username;
+      table.dealerStartBalance = dealer.balance;
+      table.isWarningActive = false;
+      table.dealerWarningRounds = 0;
+  }
+
+  // Check if Triple Profit reached (Warning Rule)
+  if (!table.isWarningActive && dealer.balance >= (table.dealerStartBalance * 3)) {
+      table.isWarningActive = true;
+      console.log(`⚠️ ဝမ်တိန်! ${dealer.username} has tripled their money.`);
+      broadcastToTable(table.tableId, { type: "game:dealer:warning", dealer: dealer.username });
+  }
+
+  if (table.isWarningActive) {
+      table.dealerWarningRounds++;
+  }
+
+  console.log(`🃏 DEALER: ${dealer.username} (Bal: ${dealer.balance})`);
 
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",
-    dealer: {
-      username: dealer.username,
-      seatId: dealer.seatId
-    }
+    dealer: { username: dealer.username, seatId: dealer.seatId, isWarning: table.isWarningActive }
   });
 }
-
 
 function rotateDealer(table) {
   const activePlayers = table.players.filter(p => !p.waiting);
@@ -79,158 +101,98 @@ function rotateDealer(table) {
   if (typeof table.rtpStats.dealerIndex !== "number") {
     table.rtpStats.dealerIndex = 0;
   } else {
-    table.rtpStats.dealerIndex =
-      (table.rtpStats.dealerIndex + 1) % activePlayers.length;
+    table.rtpStats.dealerIndex = (table.rtpStats.dealerIndex + 1) % activePlayers.length;
   }
-
-  console.log(`🔄 DEALER ROTATED → index ${table.rtpStats.dealerIndex}`);
 }
-
-
-
 
 function startGameForTable(table) {
   if (!table || table.gameInProgress || table.countdownInterval) return;
-  table.roundInProgress = true;   // ✅ ADD THIS
+  
+  table.roundInProgress = true;
   table.gameInProgress = true;
-  //table.dealing = false;
+  
   assignDealerForRound(table);
+  
   table.countdown = 3;
-
-  broadcastToTable(table.tableId, {
-    type: "game:countdown",
-    seconds: table.countdown
-  });
+  broadcastToTable(table.tableId, { type: "game:countdown", seconds: table.countdown });
 
   table.countdownInterval = setInterval(() => {
     table.countdown--;
-
     if (table.countdown > 0) {
-      broadcastToTable(table.tableId, {
-        type: "game:countdown",
-        seconds: table.countdown
-      });
+      broadcastToTable(table.tableId, { type: "game:countdown", seconds: table.countdown });
     } else {
       clearInterval(table.countdownInterval);
       table.countdownInterval = null;
-
-      broadcastToTable(table.tableId, {
-        type: "game:countdown",
-        seconds: 0
-      });
-
-      console.log(`[COUNTDOWN FINISHED → START BET] table=${table.tableId} t=${Date.now()}`);
-
       startBettingPhase(table);
     }
   }, 1000);
 }
 
-function generateAIBet(table,player)
-{
+function generateAIBet(table, player) {
   const minBet = table.minBet || table.defaultBet;
-  const maxBet = table.maxBet || table.defaultBet*10;
-
-  const steps = Math.floor((maxBet-minBet)/100)+1;
-  const randomStep = Math.floor(Math.random()*steps);
-
-  let bet = minBet+randomStep*100;
-  bet = Math.min(bet,player.balance);
-  return bet;
+  const maxBet = table.maxBet || table.defaultBet * 10;
+  const steps = Math.floor((maxBet - minBet) / 100) + 1;
+  const randomStep = Math.floor(Math.random() * steps);
+  let bet = minBet + randomStep * 100;
+  return Math.min(bet, player.balance);
 }
 
-function finializeBets(table)
-{
-  table.players.forEach(p=>{
-    if(p.isDealer) return; // skip dealer
-    if(!p.currentBet || p.currentBet<=0)
-    {
-      if(p.isAi)
-      {
-        p.currentBet = generateAIBet(table,p);
-        console.log(`Ai auto bet| ${p.username}= ${p.currentBet}`);
-      }
-      else
-      {
-        p.currentBet = table.defaultBet;
-        console.log(`Players auto bet|${p.username}=${p.currentBet}`);
-      }
+function finializeBets(table) {
+  table.players.forEach(p => {
+    if (p.isDealer) return;
+    if (!p.currentBet || p.currentBet <= 0) {
+      p.currentBet = p.isAi ? generateAIBet(table, p) : table.defaultBet;
     }
-  })
+  });
 }
 
 function startBettingPhase(table) {
   table.betTime = 5;
+  table.players.forEach(p => { p.currentBet = 0; });
+  
+  broadcastToTable(table.tableId, { type: "game:bet:start", seconds: table.betTime });
 
-  console.log(`[BET START] table=${table.tableId} t=${Date.now()} sec=${table.betTime}`);
-
-  // Reset bets for all playes
-  table.players.forEach(p=>{p.currentBet =0;});
-  broadcastToTable(table.tableId,{type:"game:bet:start", seconds: table.betTime});
-  // Place bet for Ai players
-  table.players.forEach(p=>{if(p.isAi && !p.isDealer)
-  {
-    p.currentBet  = generateAIBet(table,p);
-    console.log(`🤖 AI BET | ${p.username} = ${p.currentBet} (table ${table.tableName})`);
-  }
+  table.players.forEach(p => {
+    if (p.isAi && !p.isDealer) {
+      p.currentBet = generateAIBet(table, p);
+    }
   });
 
-  // Send Ai bets to unity
-  broadcastToTable(table.tableId,{
+  broadcastToTable(table.tableId, {
     type: "table:bet:update",
-    players: table.players.map(p=>({username:p.username,betAmount:p.currentBet})),
-    total: table.players.reduce((s,p)=> s+(p.currentBet||0),0)
+    players: table.players.map(p => ({ username: p.username, betAmount: p.currentBet })),
+    total: table.players.reduce((s, p) => s + (p.currentBet || 0), 0)
   });
 
   table.betInterval = setInterval(() => {
     table.betTime--;
-  
-    broadcastToTable(table.tableId, {
-      type: "game:bet:timer",
-      seconds: table.betTime
-    });
-  
+    broadcastToTable(table.tableId, { type: "game:bet:timer", seconds: table.betTime });
+
     if (table.betTime <= 0) {
       clearInterval(table.betInterval);
       table.betInterval = null;
-  
-      console.log(`[BET FINISHED → DEAL START] table=${table.tableId} t=${Date.now()}`);
-  
       finializeBets(table);
-  
+
       broadcastToTable(table.tableId, {
         type: "table:bet:final",
-        players: table.players.map(p => ({
-          username: p.username,
-          betAmount: p.currentBet
-        })),
+        players: table.players.map(p => ({ username: p.username, betAmount: p.currentBet })),
         total: table.players.reduce((s, p) => s + (p.currentBet || 0), 0)
       });
-  
+
       broadcastToTable(table.tableId, { type: "game:bet:end" });
-  
+
       setTimeout(() => {
-        if (startGameFn) {
-          startGameFn(null, { tableId: table.tableId });
+        if (startGameFn) startGameFn(null, { tableId: table.tableId });
+        
+        broadcastToTable(table.tableId, { type: "game:deal:start", roundId: table.roundId });
+        
+        // Rotate only if NOT in Warning mode; otherwise let them finish their 3 rounds
+        if (!table.isWarningActive) {
+            rotateDealer(table); 
         }
-  
-        broadcastToTable(table.tableId, {
-          type: "game:deal:start",
-          roundId: table.roundId
-        });
-        rotateDealer(table); // ✅ THIS IS THE CORRECT PLACE
-  
-       // table.roundInProgress = false;
-       // table.gameInProgress = false; // 🔥 SEE NEXT POINT
       }, 1000);
     }
   }, 1000);
-  
 }
-module.exports = {
-  autoStart,
-  startGameForTable,
-  startBettingPhase,
-  registerStartGame
-};
 
+module.exports = { autoStart, startGameForTable, startBettingPhase, registerStartGame };

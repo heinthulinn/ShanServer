@@ -1,3 +1,4 @@
+// ===== dealer.js =====
 function assignDealer(players, dealerIndex) {
   if (!players.length) return -1;
 

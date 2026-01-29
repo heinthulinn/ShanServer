@@ -1,0 +1,42 @@
+// ===== dealCards.js =====
+function createDeck() {
+  const suits = ["H", "C", "S", "D"];
+  const deck = [];
+  for (let n = 1; n <= 13; n++) {
+    for (const s of suits) {
+      deck.push(`${n}${s}`);
+    }
+  }
+  return deck;
+}
+
+function shuffle(deck) {
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+}
+
+function createDealer(deck) {
+  const used = new Set();
+
+  const draw = () => {
+    while (true) {
+      const card = deck[Math.floor(Math.random() * deck.length)];
+      if (!used.has(card)) {
+        used.add(card);
+        return card;
+      }
+    }
+  };
+
+  const draw5 = () => [draw(), draw(), draw(), draw(), draw()];
+
+  return { draw5 };
+}
+
+module.exports = {
+  createDeck,
+  shuffle,
+  createDealer
+};

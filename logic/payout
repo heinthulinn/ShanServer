@@ -1,0 +1,65 @@
+// ===== payout.js =====
+/**
+ * Payout system
+ * Works with startGame.js where winners, losers, and multipliers are already decided
+ */
+function collectBets(players) {
+  players.forEach(p => {
+    p.currentBet = Number(p.currentBet) || 0;
+    if (p.balance >= p.currentBet) {
+      p.balance -= p.currentBet;
+    } else {
+      p.currentBet = p.balance;
+      p.balance = 0;
+    }
+  });
+}
+
+/**
+ * Payout winners and losers
+ * @param {Array} players - all table players
+ * @param {Array} winners - array of winner names (from startGame)
+ */
+function payoutWinners(players, winners) {
+  const dealer = players.find(p => p.isDealer);
+  if (!dealer) {
+    console.warn("⚠️ No dealer found! Cannot payout.");
+    return;
+  }
+
+  const winnerNames = new Set(winners); // array of usernames from startGame
+  const results = []; // 🔥 THIS is what we send to Unity
+  players.forEach(p => {
+    if (p.isDealer) return;
+
+    const bet = p.currentBet || 0;
+    if (bet <= 0) return;
+
+    const multiplier = p.multiplier || 1; // use multiplier already set in startGame
+    const amount = bet * multiplier;
+    let delta = 0;
+
+    if (winnerNames.has(p.username)) {
+      delta =amount; //win
+      p.balance += amount;
+      dealer.balance -= amount;
+      console.log(`💵 WIN → ${p.username} | Bet:${bet} | x${multiplier} | Dealer pays:${delta}`);
+    } else {
+      delta = -amount;//lose
+      p.balance -= amount;
+      dealer.balance += amount;
+      console.log(`❌ LOSE → ${p.username} | Bet:${bet} | x${multiplier} | Player pays:${delta}`);
+    }
+    
+
+    results.push({username :p.username,delta,balance:p.balance,multiplier});
+  });
+
+  return results; // send to unity
+  console.log(`🃏 Dealer (${dealer.username}) new balance: ${dealer.balance}`);
+}
+
+module.exports = {
+  collectBets,
+  payoutWinners
+};

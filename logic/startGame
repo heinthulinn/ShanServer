@@ -1,0 +1,184 @@
+// ===== startGame.js =====
+const { tables } = require("../state/tables");
+const { broadcastToTable } = require("../ws/sender");
+const { targetRTP } = require("../config/rtp");
+const { createDeck, shuffle, createDealer } = require("./dealCards");
+const { evaluateRTP, recordPayout } = require("./rtp");
+const { collectBets, payoutWinners } = require("./payout");
+const gameHelpers = require("./gameHelpers");
+
+function startGame(ws, data) {
+    const tableId = data.tableId;
+    const table = tables[tableId];
+    if (!table) return;
+
+// ===============================
+// 🔄 ROUND RESET (SERVER AUTHORITY)
+// ===============================
+table.roundId += 1;
+
+table.dealAckReceived = false;
+table.watchTimerStarted = false;
+
+if (table.watchTimer) {
+    clearTimeout(table.watchTimer);
+    table.watchTimer = null;
+}
+
+table.currentWinners = [];
+
+table.roundState.inProgress = true;
+table.roundState.startedAt = Date.now();
+
+table.gameInProgress = true;
+
+    console.log(`🌀 ROUND STARTED | table=${tableId} | roundId=${table.roundId}`);
+
+    console.log(`🔥 startGame() called for table: ${tableId}-gamestart.js`);
+    table.players.forEach(p =>
+        console.log(`- ${p.username} | AI: ${p.isAi} | Seat: ${p.seatId} | Balance: ${p.balance}`)
+    );
+
+    // --- Build active players ---
+    let players = table.players
+        .filter(p => !p.waiting)
+        .map(p => ({
+            name: p.username,
+            isAi: p.isAi,
+            seatId: p.seatId,
+            unit: p.balance,
+            bet: Number(p.currentBet) || 0,   // ✅ ONLY THIS
+            cards: null,
+            isDealer: p.isDealer,
+            hand: null
+        }));
+    
+    const activePlayerCount = players.filter(p => p.bet > 0).length;
+    const roundTotalBet = players.reduce((sum, p) => sum + p.bet,0);
+    console.log(`💰 ROUND BET | table=${tableId} | round=${table.roundId} | total=${roundTotalBet}`);
+
+    // --- RTP Init ---
+    const rtp = table.rtpStats;
+    const { pot, bias, actualRTP } = evaluateRTP(rtp, roundTotalBet, activePlayerCount, targetRTP);
+
+    // --- Shuffle & Deal ---
+    const deck = createDeck()
+    shuffle(deck);
+    const { draw5 } = createDealer(deck);
+
+    players.forEach(p => {
+        p.cards = draw5();
+        p.hand = gameHelpers.evaluateHand(p.cards);
+    });
+
+    // --- Broadcast DEAL FINISHED to clients ---
+    broadcastToTable(tableId, { type: "game:deal:finished" });
+
+    console.log("Cards dealing finished--------------------------------------------");
+
+    // --- Apply real player bias if needed ---
+    const realPlayers = players.filter(p => !p.isAi);
+    const aiPlayers = players.filter(p => p.isAi);
+    console.log(pot,"Pot Check before<---------->");
+    // -----------------------------
+    // pot = 2 → force REAL player advantage
+    // -----------------------------
+if (pot === 2 && realPlayers.length && aiPlayers.length) {
+
+    const bestAI = Math.max(
+        ...aiPlayers.map(p => gameHelpers.unityRank(p))
+    );
+
+    const targetReal = realPlayers.reduce((a, b) =>
+        gameHelpers.unityRank(a) > gameHelpers.unityRank(b) ? a : b
+    );
+
+    targetReal.cards = gameHelpers.forceWinningHand(bestAI);
+
+    console.log(
+        `🔥 pot=2 enforced win → ${targetReal.name} (rank ${gameHelpers.unityRank(targetReal)})`
+    );
+}
+
+  //  console.log(realPlayers,"aft realPlayers----------");
+  //  console.log(aiPlayers,"aft aiPlayers<---------->");
+
+    // --- Decide winners ---
+    const winnerPlayers = gameHelpers.decideDealerWinners(players);
+    const winners = winnerPlayers.map(p => p.name);
+    console.log(`🏆 Winners: ${winners.join(", ")}`);
+    table.currentWinners = winners;   // ✅ THIS IS THE FIX
+
+// -----------------------------
+// Assign multipliers to winners
+// -----------------------------
+winnerPlayers.forEach(p => {
+    const handResult = gameHelpers.calculateBuResult(p.cards);
+    p.multiplier = handResult.payoutMultiplier;
+});
+
+// -----------------------------
+// Assign multipliers to losers
+// -----------------------------
+const loserPlayers = players.filter(p => !p.isDealer && !winnerPlayers.includes(p));
+loserPlayers.forEach(p => {
+    const handResult = gameHelpers.calculateBuResult(p.cards);
+    p.multiplier = handResult.payoutMultiplier; 
+});
+
+    // 🔄 Sync updated info back to table.players
+    table.players.forEach(tp => {
+        const p = players.find(pl => pl.name === tp.username);
+        if (p) {
+            tp.cards = p.cards;
+            tp.isDealer = p.isDealer;
+            tp.currentBet = p.bet; // ensure currentBet is correct
+            tp.multiplier = p.multiplier; // <-- ADD THIS
+        }
+    });
+
+    let payoutResults = [];
+    if (winnerPlayers.length > 0) {
+        payoutWinners(table.players, winners, roundTotalBet);
+        recordPayout(rtp,roundTotalBet);
+  
+        console.log(
+            `[RTP CHECK] round=${table.roundId} ` +
+            `roundBet=${roundTotalBet} ` +
+            `totalBets=${rtp.totalBets} ` +
+            `totalPayouts=${rtp.totalPayouts}`
+          );
+    }
+    // --- Prepare final payload ---
+    const playersInRound = players.map(p => ({
+        name: p.name,
+        isAi: p.isAi,
+        seatId: p.seatId,
+        unit: p.unit,
+        cards: p.cards,
+        isDealer: p.isDealer
+    }));
+
+    if (!playersInRound.length) return;
+  const dealerPlayer = playersInRound.find(p => p.isDealer);
+        const final = {
+            type: "game:start:result",
+            tableId,
+            roundId: table.roundId,
+            pot,
+            dealer: dealerPlayer ? dealerPlayer.name : null,
+            players: playersInRound,
+            allPlayers: table.players,
+            winners,
+            rtp: { target: targetRTP, actual: actualRTP.toFixed(3), bias }
+        };
+    
+        console.log("📦 SENDING TO UNITY AFTER 2s DELAY:");
+        playersInRound.forEach(p => 
+            console.log(`${p.name} → ${p.cards.join(",")}`)
+        );
+    
+        broadcastToTable(tableId, final);
+    }
+
+module.exports = { startGame };

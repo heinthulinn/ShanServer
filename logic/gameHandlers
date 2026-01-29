@@ -1,0 +1,307 @@
+//=========gameHandler.js============
+const { tables } = require("../state/tables");
+const { wsSend, broadcastToTable } = require("../ws/sender");
+const { resetPlayersForNextRound, resetTableState } = require("./roundReset");
+const gameFlow = require("./gameFlow");
+const { payoutWinners } = require("./payout");
+
+
+function playerReady(ws, data) {
+  const table = tables[data.tableId];
+  if (!table) return;
+
+  const player = table.players.find(
+    p => p.username === data.username && !p.isAi
+  );
+  if (!player) return;
+
+  // 🔹 MID-ROUND WATCHER
+  if (table.roundInProgress) {
+    console.log(`👀 [WATCHER READY] Player '${player.username}' joined mid-round at table ${table.tableId}`);
+    console.log("📊 Current table state for watcher:", table.players.map(p => ({
+      seatId: p.seatId,
+      username: p.username,
+      balance: p.balance,
+      ready: p.ready,
+      waiting: p.waiting,
+      currentBet: p.currentBet || 0
+    })));
+
+    // Send table snapshot to new player only
+    wsSend(ws, {
+      type: "table:full:update",
+      tableId: table.tableId,
+      gameInProgress: table.gameInProgress,
+      players: table.players.map(p => ({
+        seatId: p.seatId,
+        username: p.username,
+        balance: p.balance,
+        isAi: p.isAi,
+        ready: p.ready,
+        waiting: p.waiting,
+        currentBet: p.currentBet || 0,
+        cards: p.cards || [] // show cards if any
+      }))
+    });
+    return; // do NOT autoStart or change ready
+  }
+
+  // 🔒 NORMAL READY FLOW (if round not in progress)
+  if (player.ready) return;
+  player.ready = true;
+
+  console.log(`✅ Player '${player.username}' is ready at table ${table.tableId}`);
+
+  broadcastToTable(table.tableId, {
+    type: "table:full:update",
+    tableId: table.tableId,
+    gameInProgress: table.gameInProgress,
+    players: table.players
+  });
+
+  // ✅ only when ALL ready AND round NOT in progress
+  const preRoundPlayers = table.players.filter(p => !p.waiting && !table.roundInProgress);
+  if (preRoundPlayers.every(p => p.ready)) {
+    table.autoStartCalled = true;
+    console.log(`🚀 All pre-round players ready at table ${table.tableId}, starting autoStart`);
+    gameFlow.autoStart(table);
+  }
+}
+
+
+function handlePlayerBet(ws, data) {
+  const table = tables[data.tableId];
+  if (!table) return;
+
+  const player = table.players.find(p => p.username === data.username);
+  if (!player) return;
+
+  // 🔒 Dealer should NOT place a bet
+  if (player.isDealer) {
+    console.log(`⚠️ Dealer tried to bet, ignoring: ${player.username}`);
+    wsSend(ws, { type: "game:bet:res", success: false, message: "Dealer does not bet" });
+    return;
+  }
+
+  player.currentBet = Number(data.betAmount) || 0;
+
+  // Optional: update total bet for debugging
+  const total = table.players.reduce((sum, p) => sum + (p.currentBet || 0), 0);
+
+  console.log(`📥 BET RECEIVED | ${player.username} = ${player.currentBet} | TOTAL = ${total}`);
+
+  // Broadcast to all clients so UI updates
+  broadcastToTable(table.tableId, {
+      type: "table:bet:update",
+      players: table.players.map(p => ({
+          username: p.username,
+          betAmount: p.currentBet
+      })),
+      total
+  });
+
+  wsSend(ws, { type: "game:bet:res", success: true });
+}
+
+
+function handleGameResult(ws, data) {
+  const body = data.data || data;
+  const table = tables[body.tableId];
+  if (!table) return;
+
+  const player = table.players.find(p => p.seatId == body.seatId);
+  if (player) {
+    player.balance += Number(body.updatePoint || 0);
+  }
+
+  broadcastToTable(table.tableId, {
+    type: "table:update",
+    tableId: table.tableId,
+    players: table.players
+  });
+
+  wsSend(ws, { type: "game:result:res", success: true });
+}
+
+function scheduleNextRound(tableId) {
+    const table = tables[tableId];
+    if (!table) return;
+  
+    if (table.waitingForNextRound) return;
+    table.waitingForNextRound = true;
+  
+    setTimeout(() => {
+  
+      // 🧹 clear timers
+      if (table.countdownInterval) clearInterval(table.countdownInterval);
+      if (table.betInterval) clearInterval(table.betInterval);
+      if (table.watchTimer) clearInterval(table.watchTimer);
+      if (table.findWinnerTimer) clearInterval(table.findWinnerTimer);
+      if (table.payoutTimer) clearInterval(table.payoutTimer);
+  
+      table.countdownInterval = null;
+      table.betInterval = null;
+      table.watchTimer = null;
+      table.findWinnerTimer = null;
+      table.payoutTimer = null;
+  
+      // 🔁 reset
+      resetTableState(table);
+      resetPlayersForNextRound(table);
+  
+      table.gameInProgress = false;
+      table.roundInProgress = false;
+      table.watchTimerStarted = false;
+      table.dealAckReceived = false;
+      table.waitingForNextRound = false;
+ 
+  
+      // ✅ AUTO READY
+      table.players.forEach(p => p.ready = true);
+  
+      table.autoStartCalled = false;
+  
+      // 🚀 START NEXT ROUND
+      gameFlow.autoStart(table);
+  
+    }, 3000);
+  }
+    
+  function handleDealFinished(ws, data) {
+    const { tableId, roundId } = data;
+    const table = tables[tableId];
+    if (!table) return;
+  
+    // ❌ Wrong round
+    if (roundId !== table.roundId) {
+      console.log("⚠️ Deal ACK ignored (round mismatch)");
+      return;
+    }
+  
+    // 🔒 ACK LOCK (FIRST, ONLY ONCE)
+    if (table.dealAckReceived) {
+      console.log("⚠️ Duplicate DEAL ACK ignored");
+      return;
+    }
+    table.dealAckReceived = true;
+  
+    // 🔒 Watch timer lock
+    if (table.watchTimerStarted) {
+      console.log("⚠️ Watch timer already started");
+      return;
+    }
+    table.watchTimerStarted = true;
+  
+    console.log(`✅ DEAL FINISHED ACK | table=${tableId} | round=${roundId}`);
+  
+    // ===== 11s Watch Timer =====
+    const WATCH_TIME = 11;
+    let remainingWatch = WATCH_TIME;
+  
+    broadcastToTable(tableId, {
+      type: "game:watch:start",
+      seconds: WATCH_TIME,
+      roundId
+    });
+  
+    table.watchTimer = setInterval(() => {
+      remainingWatch--;
+  
+      if (remainingWatch <= 0) {
+        clearInterval(table.watchTimer);
+        table.watchTimer = null;
+  
+        broadcastToTable(tableId, {
+          type: "game:watch:end",
+          roundId
+        });
+  
+        // ===== 5s Find Winner Timer =====
+        let findWinnerTime = 5;
+  
+        broadcastToTable(tableId, {
+          type: "game:findwinner:start",
+          seconds: findWinnerTime,
+          roundId
+        });
+  
+        table.findWinnerTimer = setInterval(() => {
+          findWinnerTime--;
+  
+          broadcastToTable(tableId, {
+            type: "game:findwinner:tick",
+            seconds: findWinnerTime,
+            roundId
+          });
+  
+          if (findWinnerTime <= 0) {
+            clearInterval(table.findWinnerTimer);
+            table.findWinnerTimer = null;
+  
+            broadcastToTable(tableId, {
+              type: "game:findwinner:end",
+              roundId
+            });
+  
+            // ===== 5s Payout Timer =====
+            let payoutTime = 5;
+  
+            broadcastToTable(tableId, {
+              type: "game:payout:start",
+              seconds: payoutTime,
+              roundId
+            });
+      // ===== 💸 SERVER PAYOUT (AUTHORITATIVE) =====
+    const winners = table.currentWinners; // must already be set when winner decided
+
+    const payoutResults = payoutWinners(table.players, winners);
+
+  broadcastToTable(tableId, {
+    type: "game:payout:result",
+    roundId,
+    results: payoutResults
+  });
+
+  console.log("💸 PAYOUT EXECUTED", payoutResults);
+  
+            table.payoutTimer = setInterval(() => {
+              payoutTime--;
+  
+              broadcastToTable(tableId, {
+                type: "game:payout:tick",
+                seconds: payoutTime,
+                roundId
+              });
+  
+              if (payoutTime <= 0) {
+                clearInterval(table.payoutTimer);
+                table.payoutTimer = null;
+  
+                broadcastToTable(tableId, {
+                  type: "game:payout:end",
+                  roundId
+                });
+  
+                scheduleNextRound(tableId);
+              }
+            }, 1000);
+          }
+        }, 1000);
+      } else {
+        broadcastToTable(tableId, {
+          type: "game:watch:tick",
+          seconds: remainingWatch,
+          roundId
+        });
+      }
+    }, 1000);
+  }
+
+
+module.exports = {
+  playerReady,
+  handleGameResult,
+  scheduleNextRound,
+  handlePlayerBet,
+  handleDealFinished   // 🔥 ADD THIS
+};

@@ -1,0 +1,5 @@
+const targetRTP = 0.96;
+
+module.exports = {
+  targetRTP
+};

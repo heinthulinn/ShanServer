@@ -1,0 +1,169 @@
+// ===== gameHelpers.js =====
+
+// Import low-level evaluation functions
+const { evaluateHand } = require("./bugyiRules");
+const { createDeck, shuffle } = require("./dealCards");
+
+// -----------------------------
+// Get payout multiplier for a hand
+// -----------------------------
+function getPayoutMultiplier(hand) {
+    if (hand.isBugyi) return 5;               // BuGyi
+    if (hand.isBuLay || hand.isBomb || hand.isKalar5Kaung) return 8; // BuLay/Bomb/Kalar5Kaung
+    if (hand.isPhyit) {
+        if (hand.apauk === 9) return 3;          // 9 Apauk
+        if (hand.apauk === 7 || hand.apauk === 8) return 2; // 7-8 Apauk
+        return 1;                                // 6 Apauk
+    }
+    return 1;                                    // Normal hand
+}
+
+// -----------------------------
+// Calculate Bu/Phyit/Apauk result for a single hand
+// -----------------------------
+function calculateBuResult(cards) {
+    const hand = evaluateHand(cards);
+
+    const payoutMultiplier = getPayoutMultiplier({
+        isBugyi: hand.isBugyi,          // BuGyi
+        isBuLay: hand.isBulay,          // BuLay
+        isBomb: hand.isBomb,
+        isKalar5Kaung: hand.isKalar5Kaung,
+        isPhyit: hand.isPhyit,
+        apauk: hand.apauk
+    });
+
+    return {
+        cards,
+        best3: hand.best3,
+        apaukCards: hand.apaukCards,
+        apaukRaw: hand.apaukCards.length === 2 ? 
+            hand.apaukCards.reduce((sum, c) => sum + (parseInt(c, 10) >= 10 ? 10 : parseInt(c, 10)), 0) 
+            : 0,
+        apaukValue: hand.apauk,
+        isPhyit: hand.isPhyit,
+        isBuLay: hand.isBulay,
+        isBomb: hand.isBomb,
+        isBugyi: hand.isBugyi,          // BuGyi
+        totalBu: hand.totalBu,
+        payoutMultiplier
+    };
+}
+
+// -----------------------------
+// Unity rank for tie-breaking
+// -----------------------------
+function unityRank(player) {
+    const hand = evaluateHand(player.cards);
+
+    if (hand.isBomb) return 400;
+    if (hand.isBugyi) return 300;
+    if (hand.isBulay) return 200;
+    if (hand.isPhyit) return 100 + hand.apauk;
+    return 0;
+}
+
+// -----------------------------
+// Force-generate a hand stronger than a given rank
+// -----------------------------
+function forceWinningHand(minRank) {
+    let attempts = 0;
+
+    while (attempts < 500) {
+        const deck = createDeck();
+        shuffle(deck);
+
+        const cards = deck.slice(0, 5);
+        const hand = evaluateHand(cards);
+
+        let rank = 0;
+        if (hand.isBomb) rank = 400;
+        else if (hand.isBugyi) rank = 300;
+        else if (hand.isBulay) rank = 200;
+        else if (hand.isPhyit) rank = 100 + hand.apauk;
+
+        if (rank > minRank) return cards;
+
+        attempts++;
+    }
+
+    // 🔒 Absolute fallback (safe)
+    console.warn("⚠️ forceWinningHand fallback triggered");
+    return createDeck().slice(0, 5);
+}
+
+// -----------------------------
+// Decide winners against dealer
+// -----------------------------
+function decideDealerWinners(players) {
+    const dealer = players.find(p => p.isDealer);
+    if (!dealer) return [];
+
+    const dealerHand = evaluateHand(dealer.cards);
+    const dealerType = dealerHand.isBugyi ? "bugyi" :
+                       dealerHand.isBulay ? "bulay" :
+                       dealerHand.isPhyit ? "phyit" : "normal";
+
+    const dealerApauk = dealerHand.isPhyit ? dealerHand.apauk : 0;
+    const winners = [];
+
+    console.log("🧠 Dealer used in decideDealerWinners:");
+    console.log(
+        `DEALER=${dealer.name} |Bugyi:${!!dealerHand.isBugyi}  | Bulay:${!!dealerHand.isBulay} | Phyit:${!!dealerHand.isPhyit} | Apauk:${dealerApauk}`
+    );
+
+    players.forEach(p => {
+        if (p.isDealer) return;
+
+        const pHand = evaluateHand(p.cards);
+        let playerWins = false;
+
+        // -------- Compare logic --------
+        if (dealerHand.isBugyi) {
+            // Dealer is Bugyi → no one can beat
+            playerWins = false;
+        } else if (dealerHand.isBulay) {
+            // Dealer is Bulay → only Bugyi beats
+            playerWins = pHand.isBugyi;
+        } else if (dealerHand.isPhyit) {
+            if (pHand.isBugyi || pHand.isBulay) playerWins = true;      // strong hands beat Phyit
+            else if (pHand.isPhyit) playerWins = pHand.apauk > dealerApauk; // higher Phyit beats
+            else playerWins = false;                                     // normal hands lose
+        } else {
+            // Dealer normal hand
+            if (pHand.isBugyi || pHand.isBulay || pHand.isPhyit) playerWins = true;
+            else playerWins = unityRank(p) > unityRank(dealer);
+        }
+
+        if (playerWins) winners.push(p);
+        else console.log(`${p.name} loses to dealer (dealer: ${dealerType}${dealerHand.isPhyit ? `/${dealerApauk}` : ""})`);
+
+        const pApauk = pHand.isPhyit ? pHand.apauk : 0;
+        console.log(`PLAYER=${p.name} |Bugyi:${!!pHand.isBugyi} | Bulay:${!!pHand.isBulay} | Phyit:${!!pHand.isPhyit} | Apauk:${pApauk}`);
+
+    });
+
+    return winners;
+}
+
+
+// -----------------------------
+// Decide winners for general non-dealer logic
+// -----------------------------
+function decideUnityWinners(players) {
+    const winners = [];
+    players.forEach(p => {
+        const hand = evaluateHand(p.cards);
+        if (hand.isBulay || hand.isBugyi || hand.isPhyit) winners.push(p);
+    });
+    return winners;
+}
+
+// -----------------------------
+module.exports = {
+    evaluateHand,
+    unityRank,
+    forceWinningHand,
+    decideDealerWinners,
+    calculateBuResult, // contains payoutMultiplier
+};

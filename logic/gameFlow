@@ -8,32 +8,35 @@ function registerStartGame(fn) {
 }
 
 function autoStart(table) {
+  console.log("🧪 autoStart()", {
+    roundInProgress: table.roundInProgress,
+    countdownInterval: !!table.countdownInterval,
+    betInterval: !!table.betInterval,
+    ready: table.players.map(p => p.ready)
+  });
+
   if (!table || table.players.length === 0) return;
   if (table.roundInProgress || table.betInterval) return;
 
   const realPlayers = table.players.filter(p => !p.isAi);
   if (realPlayers.length < 1) return;
-  if (table.players.length < 3) return; // Shan usually 5-8, but 3 to keep it moving
+  if (table.players.length < 3) return; 
   if (!realPlayers.every(p => p.ready)) return;
 
+  console.log(`🔥 TABLE READY → STARTING SHAN GAME | table=${table.tableId}`);
   startGameForTable(table);
 }
 
-/**
- * Assigns dealer based on Shan Rules:
- * 1. Must have 10x min bet.
- * 2. Stays dealer until "Warning" rounds are finished or balance drops.
- */
 function assignDealerForRound(table) {
   if (!table.rtpStats) return;
 
   const activePlayers = table.players.filter(p => !p.waiting);
   if (!activePlayers.length) return;
 
-  // Rule: 10x Min Bet required to hold the deck (e.g., 3,000 bet needs 30,000 balance)
+  // Shan Rule: 10x Min Bet required (e.g., 3,000 bet needs 30,000 balance)
   const minDealerBalance = (table.minBet || table.defaultBet) * 10;
 
-  // Check if current dealer is in "Warning" (ဝမ်တိန်) period
+  // Check if current dealer finished 3 rounds of "Warning" (ဝမ်တိန်)
   if (table.isWarningActive && table.dealerWarningRounds >= 3) {
       console.log("🛑 Dealer finished 3-round warning period. Rotating...");
       table.isWarningActive = false;
@@ -42,13 +45,11 @@ function assignDealerForRound(table) {
       rotateDealer(table); 
   }
 
-  // Clear old dealer flags
   activePlayers.forEach(p => p.isDealer = false);
 
   let startIndex = table.rtpStats.dealerIndex || 0;
   let dealer = null;
 
-  // Find next eligible player with enough balance
   for (let i = 0; i < activePlayers.length; i++) {
     const index = (startIndex + i) % activePlayers.length;
     const candidate = activePlayers[index];
@@ -67,7 +68,7 @@ function assignDealerForRound(table) {
 
   dealer.isDealer = true;
 
-  // Initialize dealer tracking for Warning (ဝမ်တိန်)
+  // Initialize tracking for Warning (ဝမ်တိန်)
   if (table.currentDealerName !== dealer.username) {
       table.currentDealerName = dealer.username;
       table.dealerStartBalance = dealer.balance;
@@ -75,22 +76,24 @@ function assignDealerForRound(table) {
       table.dealerWarningRounds = 0;
   }
 
-  // Check if Triple Profit reached (Warning Rule)
+  // Check for Triple Profit Warning
   if (!table.isWarningActive && dealer.balance >= (table.dealerStartBalance * 3)) {
       table.isWarningActive = true;
-      console.log(`⚠️ ဝမ်တိန်! ${dealer.username} has tripled their money.`);
+      console.log(`⚠️ ဝမ်တိန်! ${dealer.username} tripled balance.`);
       broadcastToTable(table.tableId, { type: "game:dealer:warning", dealer: dealer.username });
   }
 
-  if (table.isWarningActive) {
-      table.dealerWarningRounds++;
-  }
+  if (table.isWarningActive) table.dealerWarningRounds++;
 
-  console.log(`🃏 DEALER: ${dealer.username} (Bal: ${dealer.balance})`);
+  console.log(`🃏 DEALER ASSIGNED → ${dealer.username}`);
 
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",
-    dealer: { username: dealer.username, seatId: dealer.seatId, isWarning: table.isWarningActive }
+    dealer: { 
+      username: dealer.username, 
+      seatId: dealer.seatId,
+      isWarning: table.isWarningActive 
+    }
   });
 }
 
@@ -103,12 +106,13 @@ function rotateDealer(table) {
   } else {
     table.rtpStats.dealerIndex = (table.rtpStats.dealerIndex + 1) % activePlayers.length;
   }
+  console.log(`🔄 DEALER ROTATED → index ${table.rtpStats.dealerIndex}`);
 }
 
 function startGameForTable(table) {
   if (!table || table.gameInProgress || table.countdownInterval) return;
   
-  table.roundInProgress = true;
+  table.roundInProgress = true; 
   table.gameInProgress = true;
   
   assignDealerForRound(table);
@@ -123,6 +127,9 @@ function startGameForTable(table) {
     } else {
       clearInterval(table.countdownInterval);
       table.countdownInterval = null;
+      
+      broadcastToTable(table.tableId, { type: "game:countdown", seconds: 0 });
+      console.log(`[COUNTDOWN FINISHED] table=${table.tableId}`);
       startBettingPhase(table);
     }
   }, 1000);
@@ -153,9 +160,7 @@ function startBettingPhase(table) {
   broadcastToTable(table.tableId, { type: "game:bet:start", seconds: table.betTime });
 
   table.players.forEach(p => {
-    if (p.isAi && !p.isDealer) {
-      p.currentBet = generateAIBet(table, p);
-    }
+    if (p.isAi && !p.isDealer) p.currentBet = generateAIBet(table, p);
   });
 
   broadcastToTable(table.tableId, {
@@ -182,14 +187,14 @@ function startBettingPhase(table) {
       broadcastToTable(table.tableId, { type: "game:bet:end" });
 
       setTimeout(() => {
+        // ✅ CRITICAL FIX: Reset roundInProgress so Unity hides the Countdown UI
+        table.roundInProgress = false; 
+
         if (startGameFn) startGameFn(null, { tableId: table.tableId });
         
         broadcastToTable(table.tableId, { type: "game:deal:start", roundId: table.roundId });
         
-        // Rotate only if NOT in Warning mode; otherwise let them finish their 3 rounds
-        if (!table.isWarningActive) {
-            rotateDealer(table); 
-        }
+        if (!table.isWarningActive) rotateDealer(table); 
       }, 1000);
     }
   }, 1000);

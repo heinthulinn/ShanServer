@@ -60,7 +60,7 @@ function assignDealerForRound(table) {
 
   dealer.isDealer = true;
 
-  console.log(`🃏 DEALER ASSIGNED → ${dealer.username}`);
+  console.log(`🃏 DEALER ASSIGNED → ${dealer.username} because of enough he has 10 times of min bet of ${table.tableName}`);
 
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",

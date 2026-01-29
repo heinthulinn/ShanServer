@@ -2,10 +2,19 @@
 const { tables } = require("../state/tables");
 const { broadcastToTable } = require("../ws/sender");
 const { targetRTP } = require("../config/rtp");
-const { createDeck, shuffle, createDealer } = require("./dealCards");
+const { createDeck, shuffle } = require("./dealCards");
 const { evaluateRTP, recordPayout } = require("./rtp");
-const { collectBets, payoutWinners } = require("./payout");
+const { payoutWinners } = require("./payout");
 const gameHelpers = require("./gameHelpers");
+
+/**
+ * Helper to convert Server Card Objects to Unity Strings
+ * e.g. { rank: 1, suit: 4 } => "1S"
+ */
+function formatCardsForUnity(cards) {
+    const suitMap = { 4: "S", 3: "H", 2: "D", 1: "C" };
+    return cards.map(c => `${c.rank}${suitMap[c.suit]}`);
+}
 
 function startGame(ws, data) {
     const tableId = data.tableId;
@@ -56,10 +65,9 @@ function startGame(ws, data) {
     const deck = createDeck();
     shuffle(deck);
     
-    // We use a simple slice for 2 cards each
     let deckIndex = 0;
     players.forEach(p => {
-        // Deal exactly 2 cards for the start of Shan Koe Mee
+        // Shan Koe Mee always starts with 2 cards
         p.cards = deck.slice(deckIndex, deckIndex + 2);
         deckIndex += 2;
         p.hand = gameHelpers.evaluateHand(p.cards);
@@ -72,17 +80,13 @@ function startGame(ws, data) {
     const aiPlayers = players.filter(p => p.isAi);
 
     if (pot === 2 && realPlayers.length && aiPlayers.length) {
-        // Find best AI points to beat
         const bestAIPoints = Math.max(...aiPlayers.map(p => p.hand.points));
-        
         const targetReal = realPlayers.reduce((a, b) =>
             a.hand.points > b.hand.points ? a : b
         );
 
-        // Force a winning 2-card hand for the real player
         targetReal.cards = gameHelpers.forceWinningHand(bestAIPoints);
         targetReal.hand = gameHelpers.evaluateHand(targetReal.cards);
-
         console.log(`🔥 RTP Bias: Forced win for ${targetReal.name}`);
     }
 
@@ -93,7 +97,6 @@ function startGame(ws, data) {
 
     // --- Calculate Multipliers and Results ---
     players.forEach(p => {
-        // We call calculateShanResult (the function we created in gameHelpers)
         const result = gameHelpers.calculateShanResult(p.cards);
         p.multiplier = result.payoutMultiplier;
         p.points = result.points;
@@ -116,13 +119,14 @@ function startGame(ws, data) {
         recordPayout(rtp, roundTotalBet);
     }
 
-    // --- Prepare final payload ---
+    // --- Prepare final payload for Unity ---
     const playersInRound = players.map(p => ({
         name: p.name,
         isAi: p.isAi,
         seatId: p.seatId,
         unit: p.unit,
-        cards: p.cards,
+        // ✅ KEY FIX: Convert card objects back to strings for Unity display
+        cards: formatCardsForUnity(p.cards), 
         points: p.points,
         isDealer: p.isDealer
     }));

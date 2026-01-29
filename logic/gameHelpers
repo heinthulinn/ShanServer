@@ -1,169 +1,118 @@
 // ===== gameHelpers.js =====
 
-// Import low-level evaluation functions
-const { evaluateHand } = require("./bugyiRules");
+// Import the new Shan evaluation functions
+const { evaluateHand, compareHands } = require("./shanRules");
 const { createDeck, shuffle } = require("./dealCards");
 
-// -----------------------------
-// Get payout multiplier for a hand
-// -----------------------------
+/**
+ * Get payout multiplier (ဆ) for a hand based on your Shan rules
+ * 8, 9 points = 1x
+ * 2-card same suit/rank = 2x
+ * 3-card same suit = 3x
+ * 3-card same rank (Triple) = 5x
+ */
 function getPayoutMultiplier(hand) {
-    if (hand.isBugyi) return 5;               // BuGyi
-    if (hand.isBuLay || hand.isBomb || hand.isKalar5Kaung) return 8; // BuLay/Bomb/Kalar5Kaung
-    if (hand.isPhyit) {
-        if (hand.apauk === 9) return 3;          // 9 Apauk
-        if (hand.apauk === 7 || hand.apauk === 8) return 2; // 7-8 Apauk
-        return 1;                                // 6 Apauk
-    }
-    return 1;                                    // Normal hand
+    return hand.multiplier || 1;
 }
 
-// -----------------------------
-// Calculate Bu/Phyit/Apauk result for a single hand
-// -----------------------------
-function calculateBuResult(cards) {
+/**
+ * Calculate Shan result for a single hand
+ */
+function calculateShanResult(cards) {
     const hand = evaluateHand(cards);
-
-    const payoutMultiplier = getPayoutMultiplier({
-        isBugyi: hand.isBugyi,          // BuGyi
-        isBuLay: hand.isBulay,          // BuLay
-        isBomb: hand.isBomb,
-        isKalar5Kaung: hand.isKalar5Kaung,
-        isPhyit: hand.isPhyit,
-        apauk: hand.apauk
-    });
 
     return {
         cards,
-        best3: hand.best3,
-        apaukCards: hand.apaukCards,
-        apaukRaw: hand.apaukCards.length === 2 ? 
-            hand.apaukCards.reduce((sum, c) => sum + (parseInt(c, 10) >= 10 ? 10 : parseInt(c, 10)), 0) 
-            : 0,
-        apaukValue: hand.apauk,
-        isPhyit: hand.isPhyit,
-        isBuLay: hand.isBulay,
-        isBomb: hand.isBomb,
-        isBugyi: hand.isBugyi,          // BuGyi
-        totalBu: hand.totalBu,
-        payoutMultiplier
+        points: hand.points,
+        isDuo: hand.isDuo, // 8 or 9 on first 2 cards
+        multiplier: hand.multiplier,
+        powerCard: hand.powerCard,
+        canDraw: hand.canDraw, // points < 4
+        payoutMultiplier: hand.multiplier
     };
 }
 
-// -----------------------------
-// Unity rank for tie-breaking
-// -----------------------------
+/**
+ * Unity rank for tie-breaking. 
+ * In Shan, points come first, then Power Score (10 > J > Q > K > A), then Suit.
+ */
 function unityRank(player) {
     const hand = evaluateHand(player.cards);
+    // We create a sortable score: (Points * 100) + (Power Score * 10) + SuitValue
+    // This allows a simple numeric comparison.
+    const suitValue = player.hand.powerCard.suit; // 4: Spade, 3: Heart, etc.
+    const powerScore = getPowerScoreValue(player.hand.powerCard.rank); 
 
-    if (hand.isBomb) return 400;
-    if (hand.isBugyi) return 300;
-    if (hand.isBulay) return 200;
-    if (hand.isPhyit) return 100 + hand.apauk;
-    return 0;
+    return (hand.points * 1000) + (powerScore * 10) + suitValue;
 }
 
-// -----------------------------
-// Force-generate a hand stronger than a given rank
-// -----------------------------
-function forceWinningHand(minRank) {
-    let attempts = 0;
+// Helper for unityRank (matching your power rules)
+function getPowerScoreValue(rank) {
+    const powerMap = { 10: 5, 11: 4, 12: 3, 13: 2, 1: 1 };
+    return powerMap[rank] || 0;
+}
 
+/**
+ * Force-generate a hand stronger than a given points/power
+ */
+function forceWinningHand(minPoints) {
+    let attempts = 0;
     while (attempts < 500) {
         const deck = createDeck();
         shuffle(deck);
 
-        const cards = deck.slice(0, 5);
+        // Try a 2-card hand first
+        const cards = deck.slice(0, 2);
         const hand = evaluateHand(cards);
 
-        let rank = 0;
-        if (hand.isBomb) rank = 400;
-        else if (hand.isBugyi) rank = 300;
-        else if (hand.isBulay) rank = 200;
-        else if (hand.isPhyit) rank = 100 + hand.apauk;
-
-        if (rank > minRank) return cards;
+        if (hand.points > minPoints) return cards;
+        
+        // Try a 3-card hand if 2 cards weren't enough
+        const cards3 = deck.slice(0, 3);
+        const hand3 = evaluateHand(cards3);
+        if (hand3.points > minPoints) return cards3;
 
         attempts++;
     }
-
-    // 🔒 Absolute fallback (safe)
     console.warn("⚠️ forceWinningHand fallback triggered");
-    return createDeck().slice(0, 5);
+    return createDeck().slice(0, 2); 
 }
 
-// -----------------------------
-// Decide winners against dealer
-// -----------------------------
+/**
+ * Decide winners against dealer using Shan rules
+ */
 function decideDealerWinners(players) {
     const dealer = players.find(p => p.isDealer);
     if (!dealer) return [];
 
     const dealerHand = evaluateHand(dealer.cards);
-    const dealerType = dealerHand.isBugyi ? "bugyi" :
-                       dealerHand.isBulay ? "bulay" :
-                       dealerHand.isPhyit ? "phyit" : "normal";
-
-    const dealerApauk = dealerHand.isPhyit ? dealerHand.apauk : 0;
     const winners = [];
 
-    console.log("🧠 Dealer used in decideDealerWinners:");
-    console.log(
-        `DEALER=${dealer.name} |Bugyi:${!!dealerHand.isBugyi}  | Bulay:${!!dealerHand.isBulay} | Phyit:${!!dealerHand.isPhyit} | Apauk:${dealerApauk}`
-    );
+    console.log(`DEALER Hand: ${dealerHand.points} points | Duo: ${dealerHand.isDuo} | Multiplier: x${dealerHand.multiplier}`);
 
     players.forEach(p => {
         if (p.isDealer) return;
 
         const pHand = evaluateHand(p.cards);
-        let playerWins = false;
+        
+        // Use the compareHands logic: 1 means player wins, -1 means dealer wins
+        const result = compareHands(pHand, dealerHand);
 
-        // -------- Compare logic --------
-        if (dealerHand.isBugyi) {
-            // Dealer is Bugyi → no one can beat
-            playerWins = false;
-        } else if (dealerHand.isBulay) {
-            // Dealer is Bulay → only Bugyi beats
-            playerWins = pHand.isBugyi;
-        } else if (dealerHand.isPhyit) {
-            if (pHand.isBugyi || pHand.isBulay) playerWins = true;      // strong hands beat Phyit
-            else if (pHand.isPhyit) playerWins = pHand.apauk > dealerApauk; // higher Phyit beats
-            else playerWins = false;                                     // normal hands lose
+        if (result === 1) {
+            winners.push(p);
+            console.log(`PLAYER ${p.name} WINS with ${pHand.points} pts (x${pHand.multiplier})`);
         } else {
-            // Dealer normal hand
-            if (pHand.isBugyi || pHand.isBulay || pHand.isPhyit) playerWins = true;
-            else playerWins = unityRank(p) > unityRank(dealer);
+            console.log(`PLAYER ${p.name} LOSES to dealer`);
         }
-
-        if (playerWins) winners.push(p);
-        else console.log(`${p.name} loses to dealer (dealer: ${dealerType}${dealerHand.isPhyit ? `/${dealerApauk}` : ""})`);
-
-        const pApauk = pHand.isPhyit ? pHand.apauk : 0;
-        console.log(`PLAYER=${p.name} |Bugyi:${!!pHand.isBugyi} | Bulay:${!!pHand.isBulay} | Phyit:${!!pHand.isPhyit} | Apauk:${pApauk}`);
-
     });
 
     return winners;
 }
 
-
-// -----------------------------
-// Decide winners for general non-dealer logic
-// -----------------------------
-function decideUnityWinners(players) {
-    const winners = [];
-    players.forEach(p => {
-        const hand = evaluateHand(p.cards);
-        if (hand.isBulay || hand.isBugyi || hand.isPhyit) winners.push(p);
-    });
-    return winners;
-}
-
-// -----------------------------
 module.exports = {
     evaluateHand,
     unityRank,
     forceWinningHand,
     decideDealerWinners,
-    calculateBuResult, // contains payoutMultiplier
+    calculateShanResult, 
 };

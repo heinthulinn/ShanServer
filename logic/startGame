@@ -104,7 +104,9 @@ function startGame(ws, data) {
             // 📝 PLAYER CARD LOGS
             // ==========================================
             const cardDisplay = formatCardsForUnity(tp.cards).join(", ");
-            console.log(`[PLAYER LOG] Name: ${tp.username} | Cards: [${cardDisplay}] | Points: ${tp.points} | Doe: ${tp.multiplier}`);
+            // If points is 0, label as "Bu", otherwise show the number
+            const pointLabel = tp.points === 0 ? "Bu (ဘူ)" : tp.points;
+            console.log(`[PLAYER LOG] Name: ${tp.username} | Cards: [${cardDisplay}] | Points: ${tp.points} | Sa: ${tp.multiplier}`);
             // ==========================================
         }
 

@@ -100,7 +100,14 @@ function startGame(ws, data) {
             tp.multiplier = result.payoutMultiplier;
             tp.isDealer = p.isDealer;
             tp.currentBet = p.bet;
+            // ==========================================
+            // 📝 PLAYER CARD LOGS
+            // ==========================================
+            const cardDisplay = formatCardsForUnity(tp.cards).join(", ");
+            console.log(`[PLAYER LOG] Name: ${tp.username} | Cards: [${cardDisplay}] | Points: ${tp.points} | Doe: ${tp.multiplier}`);
+            // ==========================================
         }
+
     });
 
     // --- Prepare final payload for Unity ---

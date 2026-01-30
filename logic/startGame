@@ -3,8 +3,8 @@ const { tables } = require("../state/tables");
 const { broadcastToTable } = require("../ws/sender");
 const { targetRTP } = require("../config/rtp");
 const { createDeck, shuffle } = require("./dealCards");
-const { evaluateRTP, recordPayout } = require("./rtp");
-const { payoutWinners } = require("./payout");
+const { evaluateRTP } = require("./rtp");
+// Note: payoutWinners and recordPayout removed from here, they move to gameHandler.js
 const gameHelpers = require("./gameHelpers");
 
 /**
@@ -61,19 +61,18 @@ function startGame(ws, data) {
     const rtp = table.rtpStats;
     const { pot, bias, actualRTP } = evaluateRTP(rtp, roundTotalBet, activePlayerCount, targetRTP);
 
-    // --- Shuffle & Deal (SHAN START: 2 CARDS) ---
-    const deck = createDeck();
-    shuffle(deck);
+    // --- 🃏 NEW: DECK PERSISTENCE ---
+    // We store the deck on the 'table' object so gameHandler.js can draw from it later
+    table.deck = createDeck();
+    shuffle(table.deck);
+    table.deckIndex = 0; 
     
-    let deckIndex = 0;
+    // --- Deal (SHAN START: 2 CARDS) ---
     players.forEach(p => {
-        // Shan Koe Mee always starts with 2 cards
-        p.cards = deck.slice(deckIndex, deckIndex + 2);
-        deckIndex += 2;
+        p.cards = table.deck.slice(table.deckIndex, table.deckIndex + 2);
+        table.deckIndex += 2;
         p.hand = gameHelpers.evaluateHand(p.cards);
     });
-
-    broadcastToTable(tableId, { type: "game:deal:finished" });
 
     // --- Apply RTP Bias (Pot=2: Real Player Advantage) ---
     const realPlayers = players.filter(p => !p.isAi);
@@ -90,44 +89,28 @@ function startGame(ws, data) {
         console.log(`🔥 RTP Bias: Forced win for ${targetReal.name}`);
     }
 
-    // --- Decide winners against Dealer ---
-    const winnerPlayers = gameHelpers.decideDealerWinners(players);
-    const winners = winnerPlayers.map(p => p.name);
-    table.currentWinners = winners;
-
-    // --- Calculate Multipliers and Results ---
-    players.forEach(p => {
-        const result = gameHelpers.calculateShanResult(p.cards);
-        p.multiplier = result.payoutMultiplier;
-        p.points = result.points;
-    });
-
-    // 🔄 Sync updated info back to table.players
+    // --- 🔄 Sync updated info back to table.players (AUTHORITATIVE STATE) ---
     table.players.forEach(tp => {
         const p = players.find(pl => pl.name === tp.username);
         if (p) {
             tp.cards = p.cards;
+            const result = gameHelpers.calculateShanResult(tp.cards);
+            tp.points = result.points;
+            tp.multiplier = result.payoutMultiplier;
             tp.isDealer = p.isDealer;
             tp.currentBet = p.bet;
-            tp.multiplier = p.multiplier;
-            tp.points = p.points;
         }
     });
 
-    if (winnerPlayers.length > 0) {
-        payoutWinners(table.players, winners, roundTotalBet);
-        recordPayout(rtp, roundTotalBet);
-    }
-
     // --- Prepare final payload for Unity ---
+    // We send cards, but NOT winners/payouts yet.
     const playersInRound = players.map(p => ({
         name: p.name,
         isAi: p.isAi,
         seatId: p.seatId,
         unit: p.unit,
-        // ✅ KEY FIX: Convert card objects back to strings for Unity display
         cards: formatCardsForUnity(p.cards), 
-        points: p.points,
+        points: gameHelpers.calculateShanResult(p.cards).points,
         isDealer: p.isDealer
     }));
 
@@ -139,11 +122,13 @@ function startGame(ws, data) {
         pot,
         dealer: dealerPlayer ? dealerPlayer.name : null,
         players: playersInRound,
-        winners,
+        // winners: [], // Winners not decided until after 3rd card phase
         rtp: { target: targetRTP, actual: actualRTP.toFixed(3), bias }
     };
 
     broadcastToTable(tableId, final);
+    
+    // Unity will now play the dealing animation, then send "game:deal:finished"
 }
 
 module.exports = { startGame };

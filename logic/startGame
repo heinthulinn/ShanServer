@@ -72,7 +72,6 @@ function startGame(ws, data) {
         p.cards = table.deck.slice(table.deckIndex, table.deckIndex + 2);
         table.deckIndex += 2;
         p.hand = gameHelpers.evaluateHand(p.cards);
-        console.log(p.name + "cards are " + p.hand)
     });
 
     // --- Apply RTP Bias (Pot=2: Real Player Advantage) ---
@@ -100,6 +99,11 @@ function startGame(ws, data) {
             tp.multiplier = result.payoutMultiplier;
             tp.isDealer = p.isDealer;
             tp.currentBet = p.bet;
+            // ==========================================
+            // ✅ "DO" LOGIC (Natural 8 or 9)
+            // ==========================================
+            // If points are 8 or 9 with the first 2 cards, it's a "Do"
+            tp.isDo = (tp.points === 8 || tp.points === 9);
             // ==========================================
             // 📝 PLAYER CARD LOGS
             // ==========================================

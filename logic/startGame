@@ -72,6 +72,7 @@ function startGame(ws, data) {
         p.cards = table.deck.slice(table.deckIndex, table.deckIndex + 2);
         table.deckIndex += 2;
         p.hand = gameHelpers.evaluateHand(p.cards);
+        console.log(p.name + "cards are " + p.hand)
     });
 
     // --- Apply RTP Bias (Pot=2: Real Player Advantage) ---

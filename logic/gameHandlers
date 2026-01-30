@@ -57,7 +57,8 @@ function handlePlayerBet(ws, data) {
   wsSend(ws, { type: "game:bet:res", success: true });
 }
 
-function handleGameResult(ws, data) {
+function handleGameResult(ws, data) 
+{
   const body = data.data || data;
   const table = tables[body.tableId];
   if (!table) return;
@@ -65,6 +66,19 @@ function handleGameResult(ws, data) {
   if (player) player.balance += Number(body.updatePoint || 0);
   broadcastToTable(table.tableId, { type: "table:update", tableId: table.tableId, players: table.players });
   wsSend(ws, { type: "game:result:res", success: true });
+}
+
+function handlePlayerDrawRequest(ws, data) 
+{
+  const { tableId, username, action } = data; // action: "draw" or "stop"
+  const table = tables[tableId];
+  if (!table || !table.watchTimer) return;
+
+  const player = table.players.find(p => p.username === username);
+  if (!player) return;
+
+  player.drawAction = action; 
+  console.log(`📩 [ACTION] ${username} wants to ${action}`);
 }
 
 function scheduleNextRound(tableId) {
@@ -89,10 +103,13 @@ function handleDealFinished(ws, data) {
     table.dealAckReceived = true;
     table.watchTimerStarted = true;
 
+    // Reset draw actions for new phase
+    table.players.forEach(p => p.drawAction = null);
+
     const dealer = table.players.find(p => p.isDealer);
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
 
-    // 1. Natural 8/9 Check (Immediate End)
+    // 1. Natural 8/9 Check (Immediate End - Blocks all draws)
     if (dealerRes.points >= 8) {
         broadcastToTable(tableId, { type: "game:dealer:natural", points: dealerRes.points });
         return startFindWinnerPhase(tableId, roundId);
@@ -106,15 +123,35 @@ function handleDealFinished(ws, data) {
       remainingWatch--;
       if (remainingWatch <= 0) {
         clearInterval(table.watchTimer);
+        table.watchTimer = null;
         
-        // 3. AUTO-DRAW LOGIC (For players < 4 points)
-        table.players.forEach(p => {
-            if (p.isDealer || p.waiting) return;
-            const res = gameHelpers.calculateShanResult(p.cards);
-            if (res.points < 4 && p.cards.length === 2) {
+        // 3. PROCESS FINAL DRAWS (Requests + Auto-draw < 4)
+        processFinalDraws(tableId);
+
+        // 4. PHASE 2: WATCH 3 CARDS
+        startSecondWatchPhase(tableId, roundId);
+
+      } else {
+        broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
+      }
+    }, 1000);
+}
+
+function processFinalDraws(tableId) {
+    const table = tables[tableId];
+    table.players.forEach(p => {
+        if (p.isDealer || p.waiting) return;
+
+        const res = gameHelpers.calculateShanResult(p.cards);
+        
+        // AI Logic: Auto-draw if points < 4
+        if (p.isAi && res.points < 4) p.drawAction = "draw";
+
+        // Logic: If (Requested Draw) OR (No Action Taken AND Points < 4)
+        if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {
+            if (p.cards.length === 2) {
                 const card = table.deck[table.deckIndex++];
                 p.cards.push(card);
-                // Update their points after drawing
                 const newRes = gameHelpers.calculateShanResult(p.cards);
                 p.points = newRes.points;
                 p.multiplier = newRes.payoutMultiplier;
@@ -125,16 +162,10 @@ function handleDealFinished(ws, data) {
                     card: `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`,
                     points: p.points
                 });
+                console.log(`🃏 [3RD CARD] ${p.username} | Points: ${p.points === 0 ? "Bu" : p.points}`);
             }
-        });
-
-        // 4. PHASE 2: WATCH 3 CARDS (Another brief timer to see results before winner)
-        startSecondWatchPhase(tableId, roundId);
-
-      } else {
-        broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
-      }
-    }, 1000);
+        }
+    });
 }
 
 function startSecondWatchPhase(tableId, roundId) {
@@ -189,4 +220,11 @@ function startPayoutPhase(tableId, roundId) {
     }, 1000);
 }
 
-module.exports = { playerReady, handleGameResult, scheduleNextRound, handlePlayerBet, handleDealFinished };
+module.exports = { 
+    playerReady, 
+    handleGameResult, 
+    scheduleNextRound, 
+    handlePlayerBet, 
+    handleDealFinished, 
+    handlePlayerDrawRequest 
+};

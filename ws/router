@@ -59,6 +59,9 @@ function handleWsMessage(ws, raw) {
 
     case "game:deal:finished":
       return handleDealFinished(ws, data);
+      
+    case "game:player:draw":
+      return handlePlayerDrawRequest(ws, data);
 
     case "game:result":
       return handleGameResult(ws, data);

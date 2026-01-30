@@ -24,7 +24,7 @@ function calculateShanResult(cards) {
     return {
         cards,
         points: hand.points,
-        isDuo: hand.isDuo, // 8 or 9 on first 2 cards
+        isDo: hand.isDo, // 8 or 9 on first 2 cards
         multiplier: hand.multiplier,
         powerCard: hand.powerCard,
         canDraw: hand.canDraw, // points < 4
@@ -88,7 +88,7 @@ function decideDealerWinners(players) {
     const dealerHand = evaluateHand(dealer.cards);
     const winners = [];
 
-    console.log(`DEALER Hand: ${dealerHand.points} points | Duo: ${dealerHand.isDuo} | Multiplier: x${dealerHand.multiplier}`);
+    console.log(`DEALER Hand: ${dealerHand.points} points | Do: ${dealerHand.isDo} | Multiplier: x${dealerHand.multiplier}`);
 
     players.forEach(p => {
         if (p.isDealer) return;

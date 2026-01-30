@@ -110,7 +110,7 @@ function startGame(ws, data) {
             const cardDisplay = formatCardsForUnity(tp.cards).join(", ");
             // If points is 0, label as "Bu", otherwise show the number
             const pointLabel = tp.points === 0 ? "Bu (ဘူ)" : tp.points;
-            console.log(`[PLAYER LOG] Name: ${tp.username} | Cards: [${cardDisplay}] | Points: ${pointLabel} | Sa: ${tp.multiplier}`);
+            console.log(`[PLAYER LOG] Name: ${tp.username} | Cards: [${cardDisplay}] | Points: ${pointLabel}| Do: ${tp.isDo} | Sa: ${tp.multiplier}`);
             // ==========================================
         }
 

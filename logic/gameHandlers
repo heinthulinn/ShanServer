@@ -116,7 +116,7 @@ function handleDealFinished(ws, data) {
     }
 
     // 2. PHASE 1: WATCH 2 CARDS (11 seconds)
-    let remainingWatch = 11;
+    let remainingWatch = 5;
     broadcastToTable(tableId, { type: "game:watch:start", seconds: remainingWatch, roundId });
 
     table.watchTimer = setInterval(() => {
@@ -146,6 +146,18 @@ function processFinalDraws(tableId) {
         
         // AI Logic: Auto-draw if points < 4
         if (p.isAi && res.points < 4) p.drawAction = "draw";
+
+        // --- ADD LOGS HERE ---
+        if (p.drawAction === "draw") {
+          console.log(`[LOG] ${p.username} requested to DRAW.`);
+      } else if (p.drawAction === "stop") {
+          console.log(`[LOG] ${p.username} chose to STOP.`);
+      } else if (!p.drawAction && res.points < 4) {
+          console.log(`[LOG] ${p.username} took no action. AUTO-DRAW triggered (< 4 pts).`);
+      } else {
+          console.log(`[LOG] ${p.username} took no action. Staying with 2 cards.`);
+      }
+      // ---------------------
 
         // Logic: If (Requested Draw) OR (No Action Taken AND Points < 4)
         if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {

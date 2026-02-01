@@ -143,32 +143,25 @@ function processFinalDraws(tableId) {
         if (p.isDealer || p.waiting) return;
 
         const res = gameHelpers.calculateShanResult(p.cards);
-        // 🔥 CRITICAL: If player has 8 or 9, they STOP automatically.
-    // They are not allowed to draw a 3rd card.
-    if (res.points >= 8) {
-      p.drawAction = "stop"; 
-      console.log(`[LOG] ${p.username} has Natural ${res.points}. Skipping draw.`);
-      return; 
-  }
         
-        // AI Logic: Auto-draw if points < 4
-        if (p.isAi && res.points < 4) p.drawAction = "draw";
+        if (res.points >= 8) {
+            p.drawAction = "stop"; 
+            console.log(`[LOG] ${p.username} has Natural ${res.points}. Skipping draw.`);
+            return; 
+        }      
 
-        // --- ADD LOGS HERE ---
-        if (p.drawAction === "draw") {
-          console.log(`[LOG] ${p.username} requested to DRAW.`);
-      } else if (p.drawAction === "stop") {
-          console.log(`[LOG] ${p.username} chose to STOP.`);
-      } else if (!p.drawAction && res.points < 4) {
-          console.log(`[LOG] ${p.username} took no action. AUTO-DRAW triggered (< 4 pts).`);
-      } else {
-          console.log(`[LOG] ${p.username} took no action. Staying with 2 cards.`);
-      }
-      // ---------------------
+        if (p.isAi && res.points < 4) p.drawAction = "draw";
 
         // Logic: If (Requested Draw) OR (No Action Taken AND Points < 4)
         if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {
             if (p.cards.length === 2) {
+                // LOG THE REASON
+                if (p.drawAction === "draw") {
+                    console.log(`[LOG] ${p.username} requested to DRAW.`);
+                } else {
+                    console.log(`[LOG] ${p.username} took no action. AUTO-DRAW triggered (< 4 pts).`);
+                }
+
                 const card = table.deck[table.deckIndex++];
                 p.cards.push(card);
                 const newRes = gameHelpers.calculateShanResult(p.cards);
@@ -181,7 +174,17 @@ function processFinalDraws(tableId) {
                     card: `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`,
                     points: p.points
                 });
-                console.log(`🃏 [3RD CARD] ${p.username} | Points: ${p.points === 0 ? "Bu" : p.points}`);
+
+                // REFINED LOG WITH CARD ARRAY
+                const cardLog = p.cards.map(c => `${c.rank}${{4:"S",3:"H",2:"D",1:"C"}[c.suit]}`).join(", ");
+                const displayPoints = p.points === 0 ? "Bu (ဘူ)" : p.points;
+                console.log(`🃏 [3RD CARD] ${p.username} | Cards: [${cardLog}] | Points: ${displayPoints}`);
+            }
+        } else {
+            if (p.drawAction === "stop") {
+                console.log(`[LOG] ${p.username} chose to STOP.`);
+            } else {
+                console.log(`[LOG] ${p.username} took no action. Staying with 2 cards.`);
             }
         }
     });
@@ -213,8 +216,22 @@ function startFindWinnerPhase(tableId, roundId) {
         if (findWinnerTime <= 0) {
             clearInterval(table.findWinnerTimer);
             const activePlayers = table.players.filter(p => !p.waiting);
+            
+            // LOG DEALER FINAL STATE
+            const dealer = activePlayers.find(p => p.isDealer);
+            const dRes = gameHelpers.calculateShanResult(dealer.cards);
+            console.log(`DEALER Hand: ${dRes.points} points | Multiplier: x${dRes.payoutMultiplier}`);
+
             const winnerPlayers = gameHelpers.decideDealerWinners(activePlayers);
             table.currentWinners = winnerPlayers.map(p => p.username || p.name);
+
+            // LOG INDIVIDUAL PLAYER RESULTS
+            activePlayers.forEach(p => {
+                if (p.isDealer) return;
+                const isWinner = table.currentWinners.includes(p.username);
+                console.log(`PLAYER ${p.username} ${isWinner ? "WINS" : "LOSES"} with ${p.points} pts (x${p.multiplier || 1})`);
+            });
+
             startPayoutPhase(tableId, roundId);
         } else {
             broadcastToTable(tableId, { type: "game:findwinner:tick", seconds: findWinnerTime, roundId });
@@ -226,6 +243,18 @@ function startPayoutPhase(tableId, roundId) {
     const table = tables[tableId];
     let payoutTime = 5;
     const payoutResults = payoutWinners(table.players, table.currentWinners);
+    
+    // LOG DETAILED MONEY FLOW
+    payoutResults.forEach(res => {
+        const p = table.players.find(player => player.username === res.username);
+        if (p && !p.isDealer) {
+            const isWin = table.currentWinners.includes(p.username);
+            if (isWin) {
+                console.log(`💵 WIN → ${p.username} | Bet:${p.currentBet} | x${p.multiplier || 1} | Dealer pays:${res.delta}`);
+            }
+        }
+    });
+
     broadcastToTable(tableId, { type: "game:payout:result", roundId, results: payoutResults });
 
     table.payoutTimer = setInterval(() => {

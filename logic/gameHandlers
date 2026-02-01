@@ -173,6 +173,9 @@ function processFinalDraws(tableId, roundId) {
                     points: p.points
                 });
 
+                // 2. ADD THIS LINE HERE:
+        // This forces the UI back open so they can see the 3rd card they just got
+        broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
                // broadcastToTable(tableId,{type:"ui:cardview:show", roundId});
                 // REFINED LOG WITH CARD ARRAY
                 const cardLog = p.cards.map(c => `${c.rank}${{4:"S",3:"H",2:"D",1:"C"}[c.suit]}`).join(", ");

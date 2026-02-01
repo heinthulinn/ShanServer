@@ -173,6 +173,7 @@ function processFinalDraws(tableId) {
                     points: p.points
                 });
 
+                broadcastToTable(tableId,{type:"ui:cardview:show", roundId});
                 // REFINED LOG WITH CARD ARRAY
                 const cardLog = p.cards.map(c => `${c.rank}${{4:"S",3:"H",2:"D",1:"C"}[c.suit]}`).join(", ");
                 const displayPoints = p.points === 0 ? "Bu (ဘူ)" : p.points;
@@ -197,6 +198,7 @@ function startSecondWatchPhase(tableId, roundId) {
         secondWatchTime--;
         if (secondWatchTime <= 0) {
             clearInterval(secondTimer);
+            broadcastToTable(tableId,{type:"ui:cardview:hide", roundId});
             startFindWinnerPhase(tableId, roundId);
         } else {
             broadcastToTable(tableId, { type: "game:watch3card:tick", seconds: secondWatchTime, roundId });

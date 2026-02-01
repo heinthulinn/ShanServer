@@ -175,7 +175,7 @@ function processFinalDraws(tableId, roundId) {
 
                 // 2. ADD THIS LINE HERE:
         // This forces the UI back open so they can see the 3rd card they just got
-        broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+        
                 // REFINED LOG WITH CARD ARRAY
                 const cardLog = p.cards.map(c => `${c.rank}${{4:"S",3:"H",2:"D",1:"C"}[c.suit]}`).join(", ");
                 const displayPoints = p.points === 0 ? "Bu (ဘူ)" : p.points;
@@ -193,11 +193,17 @@ function processFinalDraws(tableId, roundId) {
 
 function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
-    let secondWatchTime = 7; // 5 seconds to look at 3rd cards
+    let secondWatchTime = 11; // 5 seconds to look at 3rd cards
     broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
 
     const secondTimer = setInterval(() => {
         secondWatchTime--;
+
+        if(secondTimer<=7)
+        {
+          broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+        }
+
         if (secondWatchTime <= 0) {
             clearInterval(secondTimer);
             broadcastToTable(tableId,{type:"ui:cardview:hide", roundId});

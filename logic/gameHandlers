@@ -201,7 +201,7 @@ function startSecondWatchPhase(tableId, roundId) {
 
         // Trigger SHOW exactly when the timer hits 6 seconds
         // This ensures it only sends ONCE
-        if (secondWatchTime === 6) {
+        if (secondWatchTime === 5) {
             broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
         }
 

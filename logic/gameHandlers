@@ -149,9 +149,7 @@ function processFinalDraws(tableId) {
             console.log(`[LOG] ${p.username} has Natural ${res.points}. Skipping draw.`);
             return; 
         }      
-
         if (p.isAi && res.points < 4) p.drawAction = "draw";
-
         // Logic: If (Requested Draw) OR (No Action Taken AND Points < 4)
         if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {
             if (p.cards.length === 2) {

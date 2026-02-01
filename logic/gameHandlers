@@ -143,6 +143,13 @@ function processFinalDraws(tableId) {
         if (p.isDealer || p.waiting) return;
 
         const res = gameHelpers.calculateShanResult(p.cards);
+        // 🔥 CRITICAL: If player has 8 or 9, they STOP automatically.
+    // They are not allowed to draw a 3rd card.
+    if (res.points >= 8) {
+      p.drawAction = "stop"; 
+      console.log(`[LOG] ${p.username} has Natural ${res.points}. Skipping draw.`);
+      return; 
+  }
         
         // AI Logic: Auto-draw if points < 4
         if (p.isAi && res.points < 4) p.drawAction = "draw";

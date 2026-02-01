@@ -97,46 +97,51 @@ function scheduleNextRound(tableId) {
 }
     
 function handleDealFinished(ws, data) {
-    const { tableId, roundId } = data;
-    const table = tables[tableId];
-    if (!table || roundId !== table.roundId || table.dealAckReceived) return;
-    table.dealAckReceived = true;
-    table.watchTimerStarted = true;
+  const { tableId, roundId } = data;
+  const table = tables[tableId];
+  if (!table || roundId !== table.roundId || table.dealAckReceived) return;
+  table.dealAckReceived = true;
+  table.watchTimerStarted = true;
 
-    // Reset draw actions for new phase
-    table.players.forEach(p => p.drawAction = null);
+  table.players.forEach(p => p.drawAction = null);
 
-    const dealer = table.players.find(p => p.isDealer);
-    const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
+  const dealer = table.players.find(p => p.isDealer);
+  const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
 
-    // 1. Natural 8/9 Check (Immediate End - Blocks all draws)
-    if (dealerRes.points >= 8) {
-        broadcastToTable(tableId, { type: "game:dealer:natural", points: dealerRes.points });
-        return startFindWinnerPhase(tableId, roundId);
+  // 🔥 TRIGGER 1: Show Card Panel immediately for everyone
+  broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+  console.log(`[UI] SENT SHOW PANEL TO TABLE ${tableId}`);
+
+  // 1. Natural 8/9 Check
+  if (dealerRes.points >= 8) {
+      broadcastToTable(tableId, { type: "game:dealer:natural", points: dealerRes.points });
+      // Give players 2 seconds to see the cards before switching to winner phase
+      setTimeout(() => startFindWinnerPhase(tableId, roundId), 2000);
+      return;
+  }
+
+  // 2. PHASE 1: WATCH 2 CARDS
+  let remainingWatch = 7;
+  broadcastToTable(tableId, { type: "game:watch:start", seconds: remainingWatch, roundId });
+
+  table.watchTimer = setInterval(() => {
+    remainingWatch--;
+    if (remainingWatch <= 0) {
+      clearInterval(table.watchTimer);
+      table.watchTimer = null;
+      
+      // ❌ FIXED: Removed the 'hide' from here so the panel stays open for the 3rd card
+      
+      // 3. PROCESS FINAL DRAWS
+      processFinalDraws(tableId);
+      // 4. PHASE 2: WATCH 3 CARDS
+      startSecondWatchPhase(tableId, roundId);
+
+    } else {
+      broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
     }
-
-    // 2. PHASE 1: WATCH 2 CARDS (11 seconds)
-    let remainingWatch = 5;
-    broadcastToTable(tableId, { type: "game:watch:start", seconds: remainingWatch, roundId });
-
-    table.watchTimer = setInterval(() => {
-      remainingWatch--;
-      if (remainingWatch <= 0) {
-        clearInterval(table.watchTimer);
-        table.watchTimer = null;
-        
-        // 3. PROCESS FINAL DRAWS (Requests + Auto-draw < 4)
-        processFinalDraws(tableId);
-
-        // 4. PHASE 2: WATCH 3 CARDS
-        startSecondWatchPhase(tableId, roundId);
-
-      } else {
-        broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
-      }
-    }, 1000);
+  }, 1000);
 }
-
 function processFinalDraws(tableId) {
     const table = tables[tableId];
     table.players.forEach(p => {
@@ -205,36 +210,39 @@ function startSecondWatchPhase(tableId, roundId) {
 }
 
 function startFindWinnerPhase(tableId, roundId) {
-    const table = tables[tableId];
-    let findWinnerTime = 5;
-    broadcastToTable(tableId, { type: "game:findwinner:start", seconds: findWinnerTime, roundId });
+  const table = tables[tableId];
 
-    table.findWinnerTimer = setInterval(() => {
-        findWinnerTime--;
-        if (findWinnerTime <= 0) {
-            clearInterval(table.findWinnerTimer);
-            const activePlayers = table.players.filter(p => !p.waiting);
-            
-            // LOG DEALER FINAL STATE
-            const dealer = activePlayers.find(p => p.isDealer);
-            const dRes = gameHelpers.calculateShanResult(dealer.cards);
-            console.log(`DEALER Hand: ${dRes.points} points | Multiplier: x${dRes.payoutMultiplier}`);
+  // 🔥 TRIGGER 2: Hide Card Panel NOW (We are going back to the table view)
+  broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
+  console.log(`[UI] SENT HIDE PANEL TO TABLE ${tableId}`);
 
-            const winnerPlayers = gameHelpers.decideDealerWinners(activePlayers);
-            table.currentWinners = winnerPlayers.map(p => p.username || p.name);
+  let findWinnerTime = 5;
+  broadcastToTable(tableId, { type: "game:findwinner:start", seconds: findWinnerTime, roundId });
 
-            // LOG INDIVIDUAL PLAYER RESULTS
-            activePlayers.forEach(p => {
-                if (p.isDealer) return;
-                const isWinner = table.currentWinners.includes(p.username);
-                console.log(`PLAYER ${p.username} ${isWinner ? "WINS" : "LOSES"} with ${p.points} pts (x${p.multiplier || 1})`);
-            });
+  table.findWinnerTimer = setInterval(() => {
+      findWinnerTime--;
+      if (findWinnerTime <= 0) {
+          clearInterval(table.findWinnerTimer);
+          const activePlayers = table.players.filter(p => !p.waiting);
+          
+          const dealer = activePlayers.find(p => p.isDealer);
+          const dRes = gameHelpers.calculateShanResult(dealer.cards);
+          console.log(`DEALER Hand: ${dRes.points} points | Multiplier: x${dRes.payoutMultiplier}`);
 
-            startPayoutPhase(tableId, roundId);
-        } else {
-            broadcastToTable(tableId, { type: "game:findwinner:tick", seconds: findWinnerTime, roundId });
-        }
-    }, 1000);
+          const winnerPlayers = gameHelpers.decideDealerWinners(activePlayers);
+          table.currentWinners = winnerPlayers.map(p => p.username || p.name);
+
+          activePlayers.forEach(p => {
+              if (p.isDealer) return;
+              const isWinner = table.currentWinners.includes(p.username);
+              console.log(`PLAYER ${p.username} ${isWinner ? "WINS" : "LOSES"} with ${p.points} pts (x${p.multiplier || 1})`);
+          });
+
+          startPayoutPhase(tableId, roundId);
+      } else {
+          broadcastToTable(tableId, { type: "game:findwinner:tick", seconds: findWinnerTime, roundId });
+      }
+  }, 1000);
 }
 
 function startPayoutPhase(tableId, roundId) {

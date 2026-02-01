@@ -193,20 +193,21 @@ function processFinalDraws(tableId, roundId) {
 
 function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
-    let secondWatchTime = 11; // 5 seconds to look at 3rd cards
+    let secondWatchTime = 7; 
     broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
 
     const secondTimer = setInterval(() => {
         secondWatchTime--;
 
-        if(secondTimer<=7)
-        {
-          broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+        // Trigger SHOW exactly when the timer hits 6 seconds
+        // This ensures it only sends ONCE
+        if (secondWatchTime === 6) {
+            broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
         }
 
         if (secondWatchTime <= 0) {
             clearInterval(secondTimer);
-            broadcastToTable(tableId,{type:"ui:cardview:hide", roundId});
+            broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
             startFindWinnerPhase(tableId, roundId);
         } else {
             broadcastToTable(tableId, { type: "game:watch3card:tick", seconds: secondWatchTime, roundId });

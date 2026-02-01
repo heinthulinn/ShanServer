@@ -125,7 +125,7 @@ function handleDealFinished(ws, data) {
       if (remainingWatch <= 0) {
         clearInterval(table.watchTimer);
         table.watchTimer = null;
-      //  broadcastToTable(tableId,{type:"ui:cardview:hide", roundId});
+        broadcastToTable(tableId,{type:"ui:cardview:hide", roundId});
         // 3. PROCESS FINAL DRAWS (Requests + Auto-draw < 4)
         processFinalDraws(tableId,roundId);
         // 4. PHASE 2: WATCH 3 CARDS
@@ -173,7 +173,6 @@ function processFinalDraws(tableId, roundId) {
                     points: p.points
                 });
 
-                broadcastToTable(tableId,{type:"ui:cardview:show", roundId});
                 // REFINED LOG WITH CARD ARRAY
                 const cardLog = p.cards.map(c => `${c.rank}${{4:"S",3:"H",2:"D",1:"C"}[c.suit]}`).join(", ");
                 const displayPoints = p.points === 0 ? "Bu (ဘူ)" : p.points;
@@ -187,6 +186,8 @@ function processFinalDraws(tableId, roundId) {
             }
         }
     });
+    // Show UI again after all players finished drawing
+    broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
 }
 
 function startSecondWatchPhase(tableId, roundId) {

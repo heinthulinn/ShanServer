@@ -33,20 +33,15 @@ function assignDealerForRound(table) {
   const activePlayers = table.players.filter(p => !p.waiting);
   if (!activePlayers.length) return;
 
-  // Shan Rule: 10x Min Bet required (e.g., 3,000 bet needs 30,000 balance)
   const minBet = table.minBet || table.defaultBet;
   const buyInAmount = minBet * 10;
 
-  // Check if current dealer finished 3 rounds of "Warning" (ဝမ်တိန်)
   if (table.isWarningActive && table.dealerWarningRounds >= 3) {
-      console.log("🛑 Dealer finished 3-round warning period. Rotating...");
       finalizeBankerSession(table);
   }
 
-  // If banker pot is empty, rotate and find new dealer
   if (!table.bankerPot || table.bankerPot <= 0) {
       if (table.currentDealerName) {
-          console.log("🛑 Banker Pot empty. Rotating...");
           finalizeBankerSession(table);
       }
 
@@ -58,7 +53,7 @@ function assignDealerForRound(table) {
         const candidate = activePlayers[index];
 
         if (candidate.balance >= buyInAmount) {
-          // DEDUCT 10X FROM PLAYER BALANCE AND PUT IN POT
+          // 💰 DEDUCT IMMEDIATELY
           candidate.balance -= buyInAmount;
           table.bankerPot = buyInAmount;
           table.dealerStartPot = buyInAmount;
@@ -78,21 +73,32 @@ function assignDealerForRound(table) {
       }
   }
 
-  // Ensure isDealer flag is set correctly for the assigned player
   table.players.forEach(p => p.isDealer = (p.username === table.currentDealerName));
   const dealer = table.players.find(p => p.isDealer);
 
-  // Check for Triple Profit Warning (Based on Banker Pot)
   if (!table.isWarningActive && table.bankerPot >= (table.dealerStartPot * 3)) {
       table.isWarningActive = true;
-      console.log(`⚠️ ဝမ်တိန်! Pot reached 3x: ${table.bankerPot}`);
       broadcastToTable(table.tableId, { type: "game:dealer:warning", dealer: dealer.username });
   }
 
   if (table.isWarningActive) table.dealerWarningRounds++;
 
-  console.log(`🃏 DEALER ASSIGNED → ${dealer.username} | Pot: ${table.bankerPot}`);
+  // 🔥 CRITICAL: BROADCAST BALANCE UPDATE NOW
+  // This tells Unity the dealer's balance changed RIGHT NOW, before betting starts.
+  broadcastToTable(table.tableId, {
+    type: "table:full:update",
+    tableId: table.tableId,
+    gameInProgress: table.gameInProgress,
+    players: table.players.map(p => ({
+      seatId: p.seatId,
+      username: p.username,
+      balance: p.balance,
+      isAi: p.isAi,
+      isDealer: p.isDealer
+    }))
+  });
 
+  // Original Dealer Assigned Broadcast
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",
     dealer: { 

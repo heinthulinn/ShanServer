@@ -21,6 +21,33 @@ function startGame(ws, data) {
     const table = tables[tableId];
     if (!table) return;
 
+    // ==========================================
+    // 🏦 BANKER FUND LOGIC (10X TABLE MIN)
+    // ==========================================
+    const tableMinBet = table.minBet || 1000; // Use table min or default 1000
+    const bankerRequired = tableMinBet * 10;
+
+    // Find the actual player object in the table
+    const dealerPlayerObj = table.players.find(p => p.isDealer);
+
+    if (dealerPlayerObj) {
+        if (dealerPlayerObj.balance < bankerRequired) {
+            console.error(`❌ [ERROR] ${dealerPlayerObj.username} cannot be Banker. Needs ${bankerRequired}, has ${dealerPlayerObj.balance}`);
+            // If they can't afford it, you might want to stop the game here
+            return; 
+        }
+
+        // Deduct 10X from balance and lock it in bankerFund
+        dealerPlayerObj.balance -= bankerRequired;
+        dealerPlayerObj.bankerFund = bankerRequired;
+        
+        console.log(`🏦 [BANKER LOCK] ${dealerPlayerObj.username} locked ${bankerRequired}. New Balance: ${dealerPlayerObj.balance}`);
+    } else {
+        console.error("❌ [ERROR] No dealer assigned to this table!");
+        return;
+    }
+    // ==========================================
+
     // ===============================
     // 🔄 ROUND RESET
     // ===============================

@@ -29,6 +29,10 @@ function collectBets(players) {
  * @param {Array} players - all table players
  * @param {Array} winners - array of winner usernames
  */
+/**
+ * Payout winners and losers
+ * Banker pays winners and collects from losers using the locked bankerFund.
+ */
 function payoutWinners(players, winners) {
   const dealer = players.find(p => p.isDealer);
   if (!dealer) {
@@ -36,12 +40,13 @@ function payoutWinners(players, winners) {
     return [];
   }
 
+  // 1. Recover the locked 10X fund we took in startGame.js
+  const initialFund = dealer.bankerFund || 0;
   const winnerNames = new Set(winners);
   const results = []; 
-  let dealerDelta = 0; // Tracks Banker's total win/loss for the round
+  let dealerDelta = 0; 
 
   players.forEach(p => {
-    // Skip dealer and players who aren't playing this round
     if (p.isDealer || p.waiting) return;
 
     const bet = p.currentBet || 0;
@@ -52,21 +57,16 @@ function payoutWinners(players, winners) {
     let delta = 0;
 
     if (winnerNames.has(p.username)) {
-      // PLAYER WINS
+      // PLAYER WINS: Banker loses money
       delta = totalStake; 
-      // Return their original bet + the winnings from the dealer
       p.balance += (bet + delta); 
-      dealer.balance -= delta;
       dealerDelta -= delta;
       console.log(`💵 WIN → ${p.username} | Bet:${bet} | x${multiplier} | Dealer pays:${delta}`);
     } else {
-      // PLAYER LOSES
+      // PLAYER LOSES: Banker gains money
       delta = -totalStake;
-      // If the multiplier is > 1 (e.g. 2x or 3x), player owes more than their initial bet
       const extraLoss = totalStake - bet;
       p.balance -= extraLoss; 
-      
-      dealer.balance += totalStake;
       dealerDelta += totalStake;
       console.log(`❌ LOSE → ${p.username} | Bet:${bet} | x${multiplier} | Player pays:${totalStake}`);
     }
@@ -80,8 +80,13 @@ function payoutWinners(players, winners) {
     });
   });
 
-  // ✅ ADD THE BANKER TO THE RESULTS ARRAY
-  // This allows Unity to show "Banker +5000" or "Banker -2000"
+  // 2. FINAL BANKER SETTLEMENT
+  // We return the original 10X Fund + the total profit/loss (dealerDelta)
+  dealer.balance += (initialFund + dealerDelta);
+  
+  // 3. Reset the fund for the next round
+  dealer.bankerFund = 0;
+
   results.push({
     username: dealer.username,
     delta: dealerDelta,
@@ -90,7 +95,7 @@ function payoutWinners(players, winners) {
     isDealer: true
   });
 
-  console.log(`🃏 Dealer (${dealer.username}) Final Round Result: ${dealerDelta} | New Balance: ${dealer.balance}`);
+  console.log(`🃏 Banker (${dealer.username}) | Fund Returned: ${initialFund} | Profit/Loss: ${dealerDelta} | New Balance: ${dealer.balance}`);
   
   return results; 
 }

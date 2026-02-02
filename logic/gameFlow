@@ -33,19 +33,20 @@ function assignDealerForRound(table) {
   const activePlayers = table.players.filter(p => !p.waiting);
   if (!activePlayers.length) return;
 
+  // Shan Rule: 10x Min Bet required (e.g., 3,000 bet needs 30,000 balance)
   const minBet = table.minBet || table.defaultBet;
-  const buyInAmount = minBet * 10; // 10X Rule
+  const buyInAmount = minBet * 10;
 
-  // 1. Check if current dealer's time is up (Warning finished)
+  // Check if current dealer finished 3 rounds of "Warning" (ဝမ်တိန်)
   if (table.isWarningActive && table.dealerWarningRounds >= 3) {
-      console.log(`🛑 [BANKER SYSTEM] ${table.currentDealerName} finished 3-round warning. Rotating...`);
-      finalizeBankerSession(table); 
+      console.log("🛑 Dealer finished 3-round warning period. Rotating...");
+      finalizeBankerSession(table);
   }
 
-  // 2. If Banker Pot is empty or zero, we must find/rotate to a new Dealer
+  // If banker pot is empty, rotate and find new dealer
   if (!table.bankerPot || table.bankerPot <= 0) {
       if (table.currentDealerName) {
-          console.log(`🛑 [BANKER SYSTEM] Pot is empty (${table.bankerPot}). Rotating to next player...`);
+          console.log("🛑 Banker Pot empty. Rotating...");
           finalizeBankerSession(table);
       }
 
@@ -57,50 +58,40 @@ function assignDealerForRound(table) {
         const candidate = activePlayers[index];
 
         if (candidate.balance >= buyInAmount) {
-          // ============================================================
-          // 💰 THE DEDUCTION (10X)
-          // ============================================================
+          // DEDUCT 10X FROM PLAYER BALANCE AND PUT IN POT
           candidate.balance -= buyInAmount;
           table.bankerPot = buyInAmount;
-          table.dealerStartPot = buyInAmount; // For 3X warning check
+          table.dealerStartPot = buyInAmount;
           
           table.currentDealerName = candidate.username;
           table.rtpStats.dealerIndex = index;
           table.isWarningActive = false;
           table.dealerWarningRounds = 0;
           dealerFound = true;
-
-          console.log(`💰 [DEDUCTION] Deducted ${buyInAmount} from ${candidate.username}. New Balance: ${candidate.balance}`);
-          console.log(`🏦 [BANKER POT] Pot initialized with ${table.bankerPot}`);
           break;
-        } else {
-            console.log(`⚠️ [SKIP] ${candidate.username} has insufficient balance for Dealer (Needs ${buyInAmount})`);
         }
       }
 
       if (!dealerFound) {
-        console.log("❌ [CRITICAL] NO VALID DEALER FOUND AT TABLE (Everyone is too poor)");
+        console.log("❌ NO VALID DEALER (Insufficient balance for 10x rule)");
         return;
       }
   }
 
-  // Authoritative State Sync
+  // Ensure isDealer flag is set correctly for the assigned player
   table.players.forEach(p => p.isDealer = (p.username === table.currentDealerName));
   const dealer = table.players.find(p => p.isDealer);
 
-  // 3. Check for Triple Profit Warning (Based on Pot)
+  // Check for Triple Profit Warning (Based on Banker Pot)
   if (!table.isWarningActive && table.bankerPot >= (table.dealerStartPot * 3)) {
       table.isWarningActive = true;
-      console.log(`⚠️ [ဝမ်တိန်] WARNING TRIGGERED! Pot (${table.bankerPot}) is 3x Start (${table.dealerStartPot})`);
+      console.log(`⚠️ ဝမ်တိန်! Pot reached 3x: ${table.bankerPot}`);
       broadcastToTable(table.tableId, { type: "game:dealer:warning", dealer: dealer.username });
   }
 
-  if (table.isWarningActive) {
-      table.dealerWarningRounds++;
-      console.log(`⏳ [WARNING STATUS] Round ${table.dealerWarningRounds}/3 for ${dealer.username}`);
-  }
+  if (table.isWarningActive) table.dealerWarningRounds++;
 
-  console.log(`🃏 [DEALER ASSIGNED] ${dealer.username} | Pot: ${table.bankerPot}`);
+  console.log(`🃏 DEALER ASSIGNED → ${dealer.username} | Pot: ${table.bankerPot}`);
 
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",
@@ -116,14 +107,13 @@ function assignDealerForRound(table) {
 function finalizeBankerSession(table) {
     const dealer = table.players.find(p => p.username === table.currentDealerName);
     if (dealer && table.bankerPot > 0) {
-        console.log(`💵 [SETTLEMENT] Returning remaining pot ${table.bankerPot} to ${dealer.username}`);
-        dealer.balance += table.bankerPot;
+        dealer.balance += table.bankerPot; // Give remaining pot back to player
     }
     table.bankerPot = 0;
     table.currentDealerName = null;
     table.isWarningActive = false;
     table.dealerWarningRounds = 0;
-    rotateDealer(table); 
+    rotateDealer(table);
 }
 
 function rotateDealer(table) {
@@ -135,7 +125,7 @@ function rotateDealer(table) {
   } else {
     table.rtpStats.dealerIndex = (table.rtpStats.dealerIndex + 1) % activePlayers.length;
   }
-  console.log(`🔄 [ROTATION] Moved Dealer Index to: ${table.rtpStats.dealerIndex}`);
+  console.log(`🔄 DEALER ROTATED → index ${table.rtpStats.dealerIndex}`);
 }
 
 function startGameForTable(table) {
@@ -144,7 +134,6 @@ function startGameForTable(table) {
   table.roundInProgress = true; 
   table.gameInProgress = true;
   
-  // This is where the magic happens
   assignDealerForRound(table);
   
   table.countdown = 3;
@@ -217,11 +206,14 @@ function startBettingPhase(table) {
       broadcastToTable(table.tableId, { type: "game:bet:end" });
 
       setTimeout(() => {
+        // ✅ CRITICAL FIX: Reset roundInProgress so Unity hides the Countdown UI
         table.roundInProgress = false; 
 
         if (startGameFn) startGameFn(null, { tableId: table.tableId });
         
         broadcastToTable(table.tableId, { type: "game:deal:start", roundId: table.roundId });
+        
+        // Removed automatic rotateDealer(table) from here; it is now handled by Banker Session logic
       }, 1000);
     }
   }, 1000);

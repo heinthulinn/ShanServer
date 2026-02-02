@@ -34,67 +34,86 @@ function assignDealerForRound(table) {
   if (!activePlayers.length) return;
 
   // Shan Rule: 10x Min Bet required (e.g., 3,000 bet needs 30,000 balance)
-  const minDealerBalance = (table.minBet || table.defaultBet) * 10;
+  const minBet = table.minBet || table.defaultBet;
+  const buyInAmount = minBet * 10;
 
   // Check if current dealer finished 3 rounds of "Warning" (ဝမ်တိန်)
   if (table.isWarningActive && table.dealerWarningRounds >= 3) {
       console.log("🛑 Dealer finished 3-round warning period. Rotating...");
-      table.isWarningActive = false;
-      table.dealerWarningRounds = 0;
-      table.dealerStartBalance = 0;
-      rotateDealer(table); 
+      finalizeBankerSession(table);
   }
 
-  activePlayers.forEach(p => p.isDealer = false);
+  // If banker pot is empty, rotate and find new dealer
+  if (!table.bankerPot || table.bankerPot <= 0) {
+      if (table.currentDealerName) {
+          console.log("🛑 Banker Pot empty. Rotating...");
+          finalizeBankerSession(table);
+      }
 
-  let startIndex = table.rtpStats.dealerIndex || 0;
-  let dealer = null;
+      let startIndex = table.rtpStats.dealerIndex || 0;
+      let dealerFound = false;
 
-  for (let i = 0; i < activePlayers.length; i++) {
-    const index = (startIndex + i) % activePlayers.length;
-    const candidate = activePlayers[index];
+      for (let i = 0; i < activePlayers.length; i++) {
+        const index = (startIndex + i) % activePlayers.length;
+        const candidate = activePlayers[index];
 
-    if (candidate.balance >= minDealerBalance) {
-      dealer = candidate;
-      table.rtpStats.dealerIndex = index;
-      break;
-    }
+        if (candidate.balance >= buyInAmount) {
+          // DEDUCT 10X FROM PLAYER BALANCE AND PUT IN POT
+          candidate.balance -= buyInAmount;
+          table.bankerPot = buyInAmount;
+          table.dealerStartPot = buyInAmount;
+          
+          table.currentDealerName = candidate.username;
+          table.rtpStats.dealerIndex = index;
+          table.isWarningActive = false;
+          table.dealerWarningRounds = 0;
+          dealerFound = true;
+          break;
+        }
+      }
+
+      if (!dealerFound) {
+        console.log("❌ NO VALID DEALER (Insufficient balance for 10x rule)");
+        return;
+      }
   }
 
-  if (!dealer) {
-    console.log("❌ NO VALID DEALER (Insufficient balance for 10x rule)");
-    return;
-  }
+  // Ensure isDealer flag is set correctly for the assigned player
+  table.players.forEach(p => p.isDealer = (p.username === table.currentDealerName));
+  const dealer = table.players.find(p => p.isDealer);
 
-  dealer.isDealer = true;
-
-  // Initialize tracking for Warning (ဝမ်တိန်)
-  if (table.currentDealerName !== dealer.username) {
-      table.currentDealerName = dealer.username;
-      table.dealerStartBalance = dealer.balance;
-      table.isWarningActive = false;
-      table.dealerWarningRounds = 0;
-  }
-
-  // Check for Triple Profit Warning
-  if (!table.isWarningActive && dealer.balance >= (table.dealerStartBalance * 3)) {
+  // Check for Triple Profit Warning (Based on Banker Pot)
+  if (!table.isWarningActive && table.bankerPot >= (table.dealerStartPot * 3)) {
       table.isWarningActive = true;
-      console.log(`⚠️ ဝမ်တိန်! ${dealer.username} tripled balance.`);
+      console.log(`⚠️ ဝမ်တိန်! Pot reached 3x: ${table.bankerPot}`);
       broadcastToTable(table.tableId, { type: "game:dealer:warning", dealer: dealer.username });
   }
 
   if (table.isWarningActive) table.dealerWarningRounds++;
 
-  console.log(`🃏 DEALER ASSIGNED → ${dealer.username}`);
+  console.log(`🃏 DEALER ASSIGNED → ${dealer.username} | Pot: ${table.bankerPot}`);
 
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",
     dealer: { 
       username: dealer.username, 
       seatId: dealer.seatId,
-      isWarning: table.isWarningActive 
+      isWarning: table.isWarningActive,
+      bankerPot: table.bankerPot
     }
   });
+}
+
+function finalizeBankerSession(table) {
+    const dealer = table.players.find(p => p.username === table.currentDealerName);
+    if (dealer && table.bankerPot > 0) {
+        dealer.balance += table.bankerPot; // Give remaining pot back to player
+    }
+    table.bankerPot = 0;
+    table.currentDealerName = null;
+    table.isWarningActive = false;
+    table.dealerWarningRounds = 0;
+    rotateDealer(table);
 }
 
 function rotateDealer(table) {
@@ -194,7 +213,7 @@ function startBettingPhase(table) {
         
         broadcastToTable(table.tableId, { type: "game:deal:start", roundId: table.roundId });
         
-        if (!table.isWarningActive) rotateDealer(table); 
+        // Removed automatic rotateDealer(table) from here; it is now handled by Banker Session logic
       }, 1000);
     }
   }, 1000);

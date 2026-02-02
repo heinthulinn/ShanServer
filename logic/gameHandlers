@@ -140,7 +140,7 @@ function handleDealFinished(ws, data) {
 function processFinalDraws(tableId, roundId) {
     const table = tables[tableId];
     table.players.forEach(p => {
-        if (p.isDealer || p.waiting) return;
+        if (p.waiting) return;
 
         const res = gameHelpers.calculateShanResult(p.cards);
         

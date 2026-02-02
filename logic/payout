@@ -1,14 +1,22 @@
 // ===== payout.js =====
+
 /**
- * Payout system
- * Works with startGame.js where winners, losers, and multipliers are already decided
+ * Collects bets from players at the start of the round.
+ * Banker (Dealer) is excluded from paying a bet.
  */
 function collectBets(players) {
   players.forEach(p => {
+    // BANKER FIX: The dealer does not place a bet.
+    if (p.isDealer) {
+      p.currentBet = 0;
+      return;
+    }
+
     p.currentBet = Number(p.currentBet) || 0;
     if (p.balance >= p.currentBet) {
       p.balance -= p.currentBet;
     } else {
+      // If player is short on cash, they go All-In
       p.currentBet = p.balance;
       p.balance = 0;
     }
@@ -17,46 +25,74 @@ function collectBets(players) {
 
 /**
  * Payout winners and losers
+ * Banker pays winners and collects from losers.
  * @param {Array} players - all table players
- * @param {Array} winners - array of winner names (from startGame)
+ * @param {Array} winners - array of winner usernames
  */
 function payoutWinners(players, winners) {
   const dealer = players.find(p => p.isDealer);
   if (!dealer) {
     console.warn("⚠️ No dealer found! Cannot payout.");
-    return;
+    return [];
   }
 
-  const winnerNames = new Set(winners); // array of usernames from startGame
-  const results = []; // 🔥 THIS is what we send to Unity
+  const winnerNames = new Set(winners);
+  const results = []; 
+  let dealerDelta = 0; // Tracks Banker's total win/loss for the round
+
   players.forEach(p => {
-    if (p.isDealer) return;
+    // Skip dealer and players who aren't playing this round
+    if (p.isDealer || p.waiting) return;
 
     const bet = p.currentBet || 0;
     if (bet <= 0) return;
 
-    const multiplier = p.multiplier || 1; // use multiplier already set in startGame
-    const amount = bet * multiplier;
+    const multiplier = p.multiplier || 1; 
+    const totalStake = bet * multiplier;
     let delta = 0;
 
     if (winnerNames.has(p.username)) {
-      delta =amount; //win
-      p.balance += amount;
-      dealer.balance -= amount;
+      // PLAYER WINS
+      delta = totalStake; 
+      // Return their original bet + the winnings from the dealer
+      p.balance += (bet + delta); 
+      dealer.balance -= delta;
+      dealerDelta -= delta;
       console.log(`💵 WIN → ${p.username} | Bet:${bet} | x${multiplier} | Dealer pays:${delta}`);
     } else {
-      delta = -amount;//lose
-      p.balance -= amount;
-      dealer.balance += amount;
-      console.log(`❌ LOSE → ${p.username} | Bet:${bet} | x${multiplier} | Player pays:${delta}`);
+      // PLAYER LOSES
+      delta = -totalStake;
+      // If the multiplier is > 1 (e.g. 2x or 3x), player owes more than their initial bet
+      const extraLoss = totalStake - bet;
+      p.balance -= extraLoss; 
+      
+      dealer.balance += totalStake;
+      dealerDelta += totalStake;
+      console.log(`❌ LOSE → ${p.username} | Bet:${bet} | x${multiplier} | Player pays:${totalStake}`);
     }
-    
 
-    results.push({username :p.username,delta,balance:p.balance,multiplier});
+    results.push({
+      username: p.username,
+      delta: delta,
+      balance: p.balance,
+      multiplier: multiplier,
+      isDealer: false
+    });
   });
 
-  return results; // send to unity
-  console.log(`🃏 Dealer (${dealer.username}) new balance: ${dealer.balance}`);
+  // ✅ ADD THE BANKER TO THE RESULTS ARRAY
+  // This allows Unity to show "Banker +5000" or "Banker -2000"
+  results.push({
+    username: dealer.username,
+    delta: dealerDelta,
+    balance: dealer.balance,
+    multiplier: 1,
+    isDealer: true
+  });
+
+  console.log(`🃏 Dealer (${dealer.username}) Final Round Result: ${dealerDelta} | New Balance: ${dealer.balance}`);
+  
+  return results; 
 }
 
 module.exports = {

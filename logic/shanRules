@@ -32,7 +32,7 @@ function evaluateHand(cards) {
   }
 
   const points = calculatePoints(cards);
-  const isDuo = cards.length === 2 && (points === 8 || points === 9);
+  const isDo = cards.length === 2 && (points === 8 || points === 9);
   
   // -- Multiplier (Sa) Logic --
   let multiplier = 1;
@@ -46,8 +46,8 @@ function evaluateHand(cards) {
     else if (sameSuit) multiplier = 3; // အပွင့်တူ (၃)ချပ်
   }
 
-  // If it's a 8 or 9 (Duo), it's 1x unless it has the multipliers above
-  // Note: Usually Duo 8/9 is 1x unless suited.
+  // If it's a 8 or 9 (Do), it's 1x unless it has the multipliers above
+  // Note: Usually Do 8/9 is 1x unless suited.
 
   // -- Power for Tying --
   // High card and high suit for tie-breaking
@@ -61,7 +61,7 @@ function evaluateHand(cards) {
   return {
     cards,
     points,
-    isDuo,
+    isDo,
     multiplier,
     powerCard: highCard,
     canDraw: cards.length === 2 && points < 4, // အနည်းဆုံး ၄ ပေါက်ရှိလျှင် အသက်ပြည့်

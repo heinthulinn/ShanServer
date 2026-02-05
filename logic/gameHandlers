@@ -103,89 +103,68 @@ function handleDealFinished(ws, data) {
     const table = tables[tableId];
     if (!table || roundId !== table.roundId || table.dealAckReceived) return;
     table.dealAckReceived = true;
-    table.watchTimerStarted = true;
 
-    // Reset draw actions for new phase
-    table.players.forEach(p => p.drawAction = null);
-
+    // 1. Natural Check
     const dealer = table.players.find(p => p.isDealer);
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
-
-    // 1. Natural 8/9 Check
     if (dealerRes.points >= 8) {
         broadcastToTable(tableId, { type: "game:dealer:natural", points: dealerRes.points });
         return startFindWinnerPhase(tableId, roundId);
     }
 
-    // 2. PHASE 1 START
-    let remainingWatch = 5;
-    broadcastToTable(tableId, { type: "game:watch:start", seconds: remainingWatch, roundId });
-    
-    // 🔥 NEW: Immediately show the panel because Unity just finished the deal animation
-    broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
-    
-    table.watchTimer = setInterval(() => {
-        remainingWatch--;
-        if (remainingWatch <= 0) {
-            clearInterval(table.watchTimer);
-            table.watchTimer = null;
-            broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
+    // 🔥 STEP 1: Wait 1.5s after dealing before showing CardView
+    setTimeout(() => {
+        // 🔥 STEP 2: Show CardView
+        broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
 
-            processFinalDraws(tableId, roundId);
+        // 🔥 STEP 3: Start 7s Watch Timer
+        let remainingWatch = 7;
+        broadcastToTable(tableId, { type: "game:watch:start", seconds: remainingWatch, roundId });
 
-            const anyoneHasThreeCards = table.players.some(p => !p.waiting && p.cards.length === 3);
-            if (anyoneHasThreeCards) {
-                startSecondWatchPhase(tableId, roundId);
+        table.watchTimer = setInterval(() => {
+            remainingWatch--;
+            if (remainingWatch <= 0) {
+                clearInterval(table.watchTimer);
+                
+                // 🔥 STEP 4: Hide CardView
+                broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
+
+                // Process 3rd card draws
+                processFinalDraws(tableId, roundId);
+
+                const anyoneHasThreeCards = table.players.some(p => !p.waiting && p.cards.length === 3);
+                if (anyoneHasThreeCards) {
+                    startSecondWatchPhase(tableId, roundId);
+                } else {
+                    startFindWinnerPhase(tableId, roundId);
+                }
             } else {
-                startFindWinnerPhase(tableId, roundId);
+                broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
             }
-        } else {
-            broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
-        }
-    }, 1000);
+        }, 1000);
+    }, 1500); // 1.5s initial delay
 }
 
 function processFinalDraws(tableId, roundId) {
     const table = tables[tableId];
     table.players.forEach(p => {
         if (p.waiting) return;
-
         const res = gameHelpers.calculateShanResult(p.cards);
-        if (res.points >= 8) {
-            p.drawAction = "stop"; 
-            return; 
-        }      
+        if (res.points >= 8) return; 
+
         if (p.isAi && res.points < 4) p.drawAction = "draw";
 
-        // Logic: Manual Draw OR Auto-Draw (< 4 pts)
         if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {
             if (p.cards.length === 2) {
                 const card = table.deck[table.deckIndex++];
                 p.cards.push(card);
-                const newRes = gameHelpers.calculateShanResult(p.cards);
-                p.points = newRes.points;
-                p.multiplier = newRes.payoutMultiplier;
-
-                // Tell everyone to play the 3rd card animation
+                
+                // BROADCAST DRAW (Animates 3rd card in Unity)
                 broadcastToTable(tableId, { 
                     type: "game:player:draw", 
                     username: p.username, 
-                    card: `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`,
-                    points: p.points
+                    card: `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`
                 });
-
-                // 🔥 DELAYED UI: Wait for 3rd card animation (1.2s) before showing panel
-                if (!p.isAi && !p.isDealer && p.ws) {
-                    setTimeout(() => {
-                        if (p.ws.readyState === 1) {
-                            wsSend(p.ws, { type: "ui:cardview:show", roundId });
-                            console.log(`✨ [UI] Showed 3rd card panel to ${p.username} after animation delay.`);
-                        }
-                    }, 1200); 
-                }
-
-                const cardLog = p.cards.map(c => `${c.rank}${{4:"S",3:"H",2:"D",1:"C"}[c.suit]}`).join(", ");
-                console.log(`🃏 [3RD CARD] ${p.username} | Cards: [${cardLog}] | Points: ${p.points}`);
             }
         }
     });
@@ -193,40 +172,32 @@ function processFinalDraws(tableId, roundId) {
 
 function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
-    let secondWatchTime = 7; 
-    
-    // Everyone sees the countdown timer
-    broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
 
-    const secondTimer = setInterval(() => {
-        secondWatchTime--;
+    // 🔥 STEP 5: Wait 1.5s for 3rd card animation to land
+    setTimeout(() => {
+        // 🔥 STEP 6: Show CardView again
+        table.players.forEach(p => {
+            if (!p.isAi && !p.isDealer && p.ws) {
+                wsSend(p.ws, { type: "ui:cardview:show", roundId });
+            }
+        });
 
-        // Trigger the "Peek" UI exactly at 5 seconds remaining
-        if (secondWatchTime === 5) {
-            table.players.forEach(player => {
-                const hasThreeCards = player.cards && player.cards.length === 3;
-                const isHumanPlayer = !player.isAi && !player.isDealer;
+        // 🔥 STEP 7: Final 7s Watch Timer
+        let secondWatchTime = 7;
+        broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
 
-                // CRITICAL CHECK: Must be human AND have 3 cards
-                if (isHumanPlayer && hasThreeCards) {
-                    // Send ONLY to this specific player
-                    if (player.ws && player.ws.readyState === 1) { 
-                        wsSend(player.ws, { type: "ui:cardview:show", roundId });
-                        console.log(`✨ [UI] Showing 3rd card panel to ${player.username}`);
-                    }
-                }
-            });
-        }
-
-        if (secondWatchTime <= 0) {
-            clearInterval(secondTimer);
-            // Close the panel for everyone just to be safe
-            broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
-            startFindWinnerPhase(tableId, roundId);
-        } else {
-            broadcastToTable(tableId, { type: "game:watch3card:tick", seconds: secondWatchTime, roundId });
-        }
-    }, 1000);
+        const secondTimer = setInterval(() => {
+            secondWatchTime--;
+            if (secondWatchTime <= 0) {
+                clearInterval(secondTimer);
+                // 🔥 STEP 8: Hide and Winner
+                broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
+                startFindWinnerPhase(tableId, roundId);
+            } else {
+                broadcastToTable(tableId, { type: "game:watch3card:tick", seconds: secondWatchTime, roundId });
+            }
+        }, 1000);
+    }, 1500); // 1.5s delay for 3rd card animation
 }
 
 function startFindWinnerPhase(tableId, roundId) {

@@ -13,22 +13,17 @@ function collectBets(players) {
     }
 
     p.currentBet = Number(p.currentBet) || 0;
+
     if (p.balance >= p.currentBet) {
       p.balance -= p.currentBet;
     } else {
-      // If player is short on cash, they go All-In
+      // All-in
       p.currentBet = p.balance;
       p.balance = 0;
     }
   });
 }
 
-/**
- * Payout winners and losers
- * Banker pays winners and collects from losers.
- * @param {Array} players - all table players
- * @param {Array} winners - array of winner usernames
- */
 /**
  * Payout winners and losers
  * Banker pays winners and collects from losers using the locked bankerFund.
@@ -40,11 +35,11 @@ function payoutWinners(table, players, winners) {
     return [];
   }
 
-  // 1. Recover the locked 10X fund we took in startGame.js
+  // Locked 10x fund from dealer assignment
   const initialFund = dealer.bankerFund || 0;
   const winnerNames = new Set(winners);
-  const results = []; 
-  let dealerDelta = 0; 
+  const results = [];
+  let dealerDelta = 0;
 
   players.forEach(p => {
     if (p.isDealer || p.waiting) return;
@@ -52,23 +47,34 @@ function payoutWinners(table, players, winners) {
     const bet = p.currentBet || 0;
     if (bet <= 0) return;
 
-    const multiplier = p.multiplier || 1; 
+    const multiplier = p.multiplier || 1;
     const totalStake = bet * multiplier;
     let delta = 0;
 
     if (winnerNames.has(p.username)) {
-      // PLAYER WINS: Banker loses money
-      delta = totalStake; 
-      p.balance += (bet + delta); 
+      // PLAYER WINS → dealer pays profit
+      delta = totalStake;
+      p.balance += (bet + delta);
       dealerDelta -= delta;
-      console.log(`💵 WIN → ${p.username} | Bet:${bet} | x${multiplier} | Dealer pays:${delta}`);
+
+      console.log(
+        `💵 WIN → ${p.username} | Bet:${bet} | x${multiplier} | Dealer pays:${delta}`
+      );
     } else {
-      // PLAYER LOSES: Banker gains money
+      // PLAYER LOSES → dealer collects
       delta = -totalStake;
-      const extraLoss = totalStake - bet;
-      p.balance -= extraLoss; 
+
+      // Bet already deducted in collectBets()
+      const lossExtra = totalStake - bet;
+      if (lossExtra > 0) {
+        p.balance -= lossExtra;
+      }
+
       dealerDelta += totalStake;
-      console.log(`❌ LOSE → ${p.username} | Bet:${bet} | x${multiplier} | Player pays:${totalStake}`);
+
+      console.log(
+        `❌ LOSE → ${p.username} | Bet:${bet} | x${multiplier} | Player pays:${totalStake}`
+      );
     }
 
     results.push({
@@ -80,38 +86,37 @@ function payoutWinners(table, players, winners) {
     });
   });
 
-  // 2. FINAL BANKER SETTLEMENT
-  // We return the original 10X Fund + the total profit/loss (dealerDelta)
-  dealer.balance += (initialFund + dealerDelta);
-  
-  // 3. Reset the fund for the next round
+  // ===== FINAL BANKER SETTLEMENT =====
+
+  // Apply profit / loss to dealer real balance
+  dealer.balance += dealerDelta;
+
+  // Safety init
+  if (typeof table.bankerPot !== "number") {
+    table.bankerPot = 0;
+  }
+
+  // Update session banker pot
+  table.bankerPot += dealerDelta;
+  if (table.bankerPot < 0) table.bankerPot = 0;
+
+  // Reset locked fund for next round
   dealer.bankerFund = 0;
-  // 🔒 SAFETY INIT (CRITICAL)
-if (typeof table.bankerPot !== "number") {
-  table.bankerPot = 0;
-}
-  // 🔥 UPDATE BANKER POT (SESSION BASED)
-table.bankerPot += dealerDelta;
-
-if (table.bankerPot < 0) {
-  table.bankerPot = 0; // safety
-}
-
-  
-
 
   results.push({
     username: dealer.username,
     delta: dealerDelta,
     balance: dealer.balance,
-    bankerPot: table.bankerPot, // 👈 ADD THIS
+    bankerPot: table.bankerPot,
     multiplier: 1,
     isDealer: true
   });
 
-  console.log(`🃏 Banker (${dealer.username}) | Fund Returned: ${initialFund} | Profit/Loss: ${dealerDelta} | New Balance: ${dealer.balance}`);
-  
-  return results; 
+  console.log(
+    `🃏 Banker (${dealer.username}) | Fund:${initialFund} | P/L:${dealerDelta} | New Balance:${dealer.balance}`
+  );
+
+  return results;
 }
 
 module.exports = {

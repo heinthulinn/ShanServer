@@ -76,6 +76,8 @@ function assignDealerForRound(table) {
   table.players.forEach(p => p.isDealer = (p.username === table.currentDealerName));
   const dealer = table.players.find(p => p.isDealer);
 
+// 🔥 ADD THIS
+dealer.bankerFund = table.bankerPot;
   if (!table.isWarningActive && table.bankerPot >= (table.dealerStartPot * 3)) {
       table.isWarningActive = true;
       broadcastToTable(table.tableId, { type: "game:dealer:warning", dealer: dealer.username });

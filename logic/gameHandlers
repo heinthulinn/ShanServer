@@ -142,7 +142,7 @@ function handleDealFinished(ws, data) {
                 broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
             }
         }, 1000);
-    }, 1500); // 1.5s initial delay
+    }, 500); // 1.5s initial delay
 }
 
 function processFinalDraws(tableId, roundId) {

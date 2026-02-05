@@ -197,20 +197,24 @@ function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
     let secondWatchTime = 7; 
     
-    // Still broadcast the timer/tick so everyone's UI stays in sync
+    // Everyone sees the countdown timer
     broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
 
     const secondTimer = setInterval(() => {
         secondWatchTime--;
 
-        // Trigger SHOW only for players who have 3 cards
+        // Trigger the "Peek" UI exactly at 5 seconds remaining
         if (secondWatchTime === 5) {
             table.players.forEach(player => {
-                // Only send to human players who have exactly 3 cards
-                if (!player.isAi && player.cards && player.cards.length === 3) {
-                    // Use wsSend to target the specific player's socket
-                    if (player.ws && player.ws.readyState === 1) { // 1 = OPEN
+                const hasThreeCards = player.cards && player.cards.length === 3;
+                const isHumanPlayer = !player.isAi && !player.isDealer;
+
+                // CRITICAL CHECK: Must be human AND have 3 cards
+                if (isHumanPlayer && hasThreeCards) {
+                    // Send ONLY to this specific player
+                    if (player.ws && player.ws.readyState === 1) { 
                         wsSend(player.ws, { type: "ui:cardview:show", roundId });
+                        console.log(`✨ [UI] Showing 3rd card panel to ${player.username}`);
                     }
                 }
             });
@@ -218,7 +222,7 @@ function startSecondWatchPhase(tableId, roundId) {
 
         if (secondWatchTime <= 0) {
             clearInterval(secondTimer);
-            // Hide for everyone (even if they didn't see it, sending hide is safe)
+            // Close the panel for everyone just to be safe
             broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
             startFindWinnerPhase(tableId, roundId);
         } else {

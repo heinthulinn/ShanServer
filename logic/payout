@@ -33,7 +33,7 @@ function collectBets(players) {
  * Payout winners and losers
  * Banker pays winners and collects from losers using the locked bankerFund.
  */
-function payoutWinners(players, winners) {
+function payoutWinners(table, players, winners) {
   const dealer = players.find(p => p.isDealer);
   if (!dealer) {
     console.warn("⚠️ No dealer found! Cannot payout.");
@@ -86,11 +86,21 @@ function payoutWinners(players, winners) {
   
   // 3. Reset the fund for the next round
   dealer.bankerFund = 0;
+  // 🔥 UPDATE BANKER POT (SESSION BASED)
+table.bankerPot += dealerDelta;
+
+if (table.bankerPot < 0) {
+  table.bankerPot = 0; // safety
+}
+
+  
+
 
   results.push({
     username: dealer.username,
     delta: dealerDelta,
     balance: dealer.balance,
+    bankerPot: table.bankerPot, // 👈 ADD THIS
     multiplier: 1,
     isDealer: true
   });

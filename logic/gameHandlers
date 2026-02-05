@@ -114,7 +114,6 @@ function handleDealFinished(ws, data) {
     // 1. Natural 8/9 Check (Immediate End - Blocks all draws)
     if (dealerRes.points >= 8) {
         broadcastToTable(tableId, { type: "game:dealer:natural", points: dealerRes.points });
-        broadcastToTable(tableId,{type:"ui:cardview:hide", roundId});
         return startFindWinnerPhase(tableId, roundId);
     }
 

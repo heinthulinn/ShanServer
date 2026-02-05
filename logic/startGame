@@ -115,7 +115,9 @@ function startGame(ws, data) {
             // ==========================================
             // ✅ "DO" LOGIC (Natural 8 or 9)
             // ==========================================
-            tp.isDo = (tp.points === 8 || tp.points === 9);
+           // tp.isDo = (tp.points === 8 || tp.points === 9);
+           tp.isDo = (tp.cards.length === 2 && (tp.points === 8 || tp.points === 9));
+
             // ==========================================
             // 📝 PLAYER CARD LOGS
             // ==========================================
@@ -128,16 +130,22 @@ function startGame(ws, data) {
     });
 
     // --- Prepare final payload for Unity ---
-    const playersInRound = players.map(p => ({
-        name: p.name,
-        isAi: p.isAi,
-        seatId: p.seatId,
-        unit: p.unit, // ✅ Unity receives balance with 10X already removed
-        cards: formatCardsForUnity(p.cards), 
-        points: gameHelpers.calculateShanResult(p.cards).points,
-        isDealer: p.isDealer
-    }));
-
+    const playersInRound = players.map(p => {
+        const result = gameHelpers.calculateShanResult(p.cards);
+    
+        return {
+            name: p.name,
+            isAi: p.isAi,
+            seatId: p.seatId,
+            unit: p.unit,
+            cards: formatCardsForUnity(p.cards),
+            points: result.points,
+            isDo: result.isDo,          // ✅ SERVER AUTHORITY
+            multiplier: result.multiplier,
+            isDealer: p.isDealer
+        };
+    });
+    
     const dealerPlayer = playersInRound.find(p => p.isDealer);
     const final = {
         type: "game:start:result",

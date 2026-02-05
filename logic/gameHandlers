@@ -196,19 +196,29 @@ function processFinalDraws(tableId, roundId) {
 function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
     let secondWatchTime = 7; 
+    
+    // Still broadcast the timer/tick so everyone's UI stays in sync
     broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
 
     const secondTimer = setInterval(() => {
         secondWatchTime--;
 
-        // Trigger SHOW exactly when the timer hits 6 seconds
-        // This ensures it only sends ONCE
+        // Trigger SHOW only for players who have 3 cards
         if (secondWatchTime === 5) {
-            broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+            table.players.forEach(player => {
+                // Only send to human players who have exactly 3 cards
+                if (!player.isAi && player.cards && player.cards.length === 3) {
+                    // Use wsSend to target the specific player's socket
+                    if (player.ws && player.ws.readyState === 1) { // 1 = OPEN
+                        wsSend(player.ws, { type: "ui:cardview:show", roundId });
+                    }
+                }
+            });
         }
 
         if (secondWatchTime <= 0) {
             clearInterval(secondTimer);
+            // Hide for everyone (even if they didn't see it, sending hide is safe)
             broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
             startFindWinnerPhase(tableId, roundId);
         } else {

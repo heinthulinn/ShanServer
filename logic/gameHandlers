@@ -111,43 +111,38 @@ function handleDealFinished(ws, data) {
     const dealer = table.players.find(p => p.isDealer);
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
 
-    // 1. Natural 8/9 Check (Immediate End - Blocks all draws)
+    // 1. Natural 8/9 Check
     if (dealerRes.points >= 8) {
         broadcastToTable(tableId, { type: "game:dealer:natural", points: dealerRes.points });
         return startFindWinnerPhase(tableId, roundId);
     }
 
-    // 2. PHASE 1: WATCH 2 CARDS (11 seconds)
+    // 2. PHASE 1 START
     let remainingWatch = 5;
     broadcastToTable(tableId, { type: "game:watch:start", seconds: remainingWatch, roundId });
-   // broadcastToTable(tableId,{type:"ui:cardview:show", roundId});
     
-   // ... inside handleDealFinished ...
-   table.watchTimer = setInterval(() => {
-    remainingWatch--;
-    if (remainingWatch <= 0) {
-      clearInterval(table.watchTimer);
-      table.watchTimer = null;
-      broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
+    // 🔥 NEW: Immediately show the panel because Unity just finished the deal animation
+    broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+    
+    table.watchTimer = setInterval(() => {
+        remainingWatch--;
+        if (remainingWatch <= 0) {
+            clearInterval(table.watchTimer);
+            table.watchTimer = null;
+            broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
 
-      // 1. Process the draws first
-      processFinalDraws(tableId, roundId);
+            processFinalDraws(tableId, roundId);
 
-      // 2. CHECK: Did anyone actually get a 3rd card?
-      const anyoneHasThreeCards = table.players.some(p => !p.waiting && p.cards.length === 3);
-
-      if (anyoneHasThreeCards) {
-          // Only start the 7rd-card watch phase if there are 3rd cards to look at
-          startSecondWatchPhase(tableId, roundId);
-      } else {
-          console.log("⏩ [SKIP] No players have 3 cards. Skipping Phase 2.");
-          startFindWinnerPhase(tableId, roundId);
-      }
-
-    } else {
-      broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
-    }
-  }, 1000);
+            const anyoneHasThreeCards = table.players.some(p => !p.waiting && p.cards.length === 3);
+            if (anyoneHasThreeCards) {
+                startSecondWatchPhase(tableId, roundId);
+            } else {
+                startFindWinnerPhase(tableId, roundId);
+            }
+        } else {
+            broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
+        }
+    }, 1000);
 }
 
 function processFinalDraws(tableId, roundId) {
@@ -156,29 +151,22 @@ function processFinalDraws(tableId, roundId) {
         if (p.waiting) return;
 
         const res = gameHelpers.calculateShanResult(p.cards);
-        
         if (res.points >= 8) {
             p.drawAction = "stop"; 
-            console.log(`[LOG] ${p.username} has Natural ${res.points}. Skipping draw.`);
             return; 
         }      
         if (p.isAi && res.points < 4) p.drawAction = "draw";
-        // Logic: If (Requested Draw) OR (No Action Taken AND Points < 4)
+
+        // Logic: Manual Draw OR Auto-Draw (< 4 pts)
         if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {
             if (p.cards.length === 2) {
-                // LOG THE REASON
-                if (p.drawAction === "draw") {
-                    console.log(`[LOG] ${p.username} requested to DRAW.`);
-                } else {
-                    console.log(`[LOG] ${p.username} took no action. AUTO-DRAW triggered (< 4 pts).`);
-                }
-
                 const card = table.deck[table.deckIndex++];
                 p.cards.push(card);
                 const newRes = gameHelpers.calculateShanResult(p.cards);
                 p.points = newRes.points;
                 p.multiplier = newRes.payoutMultiplier;
 
+                // Tell everyone to play the 3rd card animation
                 broadcastToTable(tableId, { 
                     type: "game:player:draw", 
                     username: p.username, 
@@ -186,19 +174,18 @@ function processFinalDraws(tableId, roundId) {
                     points: p.points
                 });
 
-                // 2. ADD THIS LINE HERE:
-        // This forces the UI back open so they can see the 3rd card they just got
-        
-                // REFINED LOG WITH CARD ARRAY
+                // 🔥 DELAYED UI: Wait for 3rd card animation (1.2s) before showing panel
+                if (!p.isAi && !p.isDealer && p.ws) {
+                    setTimeout(() => {
+                        if (p.ws.readyState === 1) {
+                            wsSend(p.ws, { type: "ui:cardview:show", roundId });
+                            console.log(`✨ [UI] Showed 3rd card panel to ${p.username} after animation delay.`);
+                        }
+                    }, 1200); 
+                }
+
                 const cardLog = p.cards.map(c => `${c.rank}${{4:"S",3:"H",2:"D",1:"C"}[c.suit]}`).join(", ");
-                const displayPoints = p.points === 0 ? "Bu (ဘူ)" : p.points;
-                console.log(`🃏 [3RD CARD] ${p.username} | Cards: [${cardLog}] | Points: ${displayPoints}`);
-            }
-        } else {
-            if (p.drawAction === "stop") {
-                console.log(`[LOG] ${p.username} chose to STOP.`);
-            } else {
-                console.log(`[LOG] ${p.username} took no action. Staying with 2 cards.`);
+                console.log(`🃏 [3RD CARD] ${p.username} | Cards: [${cardLog}] | Points: ${p.points}`);
             }
         }
     });

@@ -157,16 +157,20 @@ function processFinalDraws(tableId, roundId) {
 
         const res = gameHelpers.calculateShanResult(p.cards);
         
+        // 1. Natural 8/9 Check (Cannot draw)
         if (res.points >= 8) {
             p.drawAction = "stop"; 
             console.log(`[LOG] ${p.username} has Natural ${res.points}. Skipping draw.`);
             return; 
         }      
+
+        // 2. AI Auto-draw logic
         if (p.isAi && res.points < 4) p.drawAction = "draw";
-        // Logic: If (Requested Draw) OR (No Action Taken AND Points < 4)
+
+        // 3. Execution Logic: Manual Draw OR Auto-Draw (< 4 pts)
         if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {
             if (p.cards.length === 2) {
-                // LOG THE REASON
+                // Logging the reason for the draw
                 if (p.drawAction === "draw") {
                     console.log(`[LOG] ${p.username} requested to DRAW.`);
                 } else {
@@ -179,6 +183,7 @@ function processFinalDraws(tableId, roundId) {
                 p.points = newRes.points;
                 p.multiplier = newRes.payoutMultiplier;
 
+                // Broadcast the draw event so all clients play the animation
                 broadcastToTable(tableId, { 
                     type: "game:player:draw", 
                     username: p.username, 
@@ -186,60 +191,30 @@ function processFinalDraws(tableId, roundId) {
                     points: p.points
                 });
 
-                // 2. ADD THIS LINE HERE:
-        // This forces the UI back open so they can see the 3rd card they just got
-        
-                // REFINED LOG WITH CARD ARRAY
+                // DELAYED UI SHOW: Wait for card animation to finish (1.2 seconds)
+                if (!p.isAi && !p.isDealer && p.ws) {
+                    setTimeout(() => {
+                        if (p.ws.readyState === 1) { // Check if socket is still open
+                            wsSend(p.ws, { type: "ui:cardview:show", roundId });
+                            console.log(`✨ [UI] Showed panel to ${p.username} after animation.`);
+                        }
+                    }, 1200); 
+                }
+
+                // Final console log for debugging
                 const cardLog = p.cards.map(c => `${c.rank}${{4:"S",3:"H",2:"D",1:"C"}[c.suit]}`).join(", ");
                 const displayPoints = p.points === 0 ? "Bu (ဘူ)" : p.points;
                 console.log(`🃏 [3RD CARD] ${p.username} | Cards: [${cardLog}] | Points: ${displayPoints}`);
             }
         } else {
+            // Player stays with 2 cards
             if (p.drawAction === "stop") {
                 console.log(`[LOG] ${p.username} chose to STOP.`);
             } else {
-                console.log(`[LOG] ${p.username} took no action. Staying with 2 cards.`);
+                console.log(`[LOG] ${p.username} took no action (4+ pts). Staying with 2 cards.`);
             }
         }
     });
-}
-
-function startSecondWatchPhase(tableId, roundId) {
-    const table = tables[tableId];
-    let secondWatchTime = 7; 
-    
-    // Everyone sees the countdown timer
-    broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
-
-    const secondTimer = setInterval(() => {
-        secondWatchTime--;
-
-        // Trigger the "Peek" UI exactly at 5 seconds remaining
-        if (secondWatchTime === 5) {
-            table.players.forEach(player => {
-                const hasThreeCards = player.cards && player.cards.length === 3;
-                const isHumanPlayer = !player.isAi && !player.isDealer;
-
-                // CRITICAL CHECK: Must be human AND have 3 cards
-                if (isHumanPlayer && hasThreeCards) {
-                    // Send ONLY to this specific player
-                    if (player.ws && player.ws.readyState === 1) { 
-                        wsSend(player.ws, { type: "ui:cardview:show", roundId });
-                        console.log(`✨ [UI] Showing 3rd card panel to ${player.username}`);
-                    }
-                }
-            });
-        }
-
-        if (secondWatchTime <= 0) {
-            clearInterval(secondTimer);
-            // Close the panel for everyone just to be safe
-            broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
-            startFindWinnerPhase(tableId, roundId);
-        } else {
-            broadcastToTable(tableId, { type: "game:watch3card:tick", seconds: secondWatchTime, roundId });
-        }
-    }, 1000);
 }
 
 function startFindWinnerPhase(tableId, roundId) {

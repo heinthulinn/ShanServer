@@ -86,6 +86,10 @@ function payoutWinners(table, players, winners) {
   
   // 3. Reset the fund for the next round
   dealer.bankerFund = 0;
+  // 🔒 SAFETY INIT (CRITICAL)
+if (typeof table.bankerPot !== "number") {
+  table.bankerPot = 0;
+}
   // 🔥 UPDATE BANKER POT (SESSION BASED)
 table.bankerPot += dealerDelta;
 

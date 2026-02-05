@@ -253,7 +253,7 @@ function startFindWinnerPhase(tableId, roundId) {
 function startPayoutPhase(tableId, roundId) {
     const table = tables[tableId];
     let payoutTime = 5;
-    const payoutResults = payoutWinners(table.players, table.currentWinners);
+    const payoutResults = payoutWinners(table,table.players, table.currentWinners);
     
     // LOG DETAILED MONEY FLOW
     payoutResults.forEach(res => {

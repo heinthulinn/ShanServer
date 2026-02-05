@@ -173,16 +173,12 @@ function processFinalDraws(tableId, roundId) {
 function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
 
-    // 🔥 STEP 5: Wait 1.5s for 3rd card animation to land
+    // Wait 1.5s for 3rd card animation to land
     setTimeout(() => {
-        // 🔥 STEP 6: Show CardView again
-        table.players.forEach(p => {
-            if (!p.isAi && !p.isDealer && p.ws) {
-                wsSend(p.ws, { type: "ui:cardview:show", roundId });
-            }
-        });
+        // FIX: Use broadcastToTable so everyone sees the updated 3-card view
+        broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
 
-        // 🔥 STEP 7: Final 7s Watch Timer
+        // Final 7s Watch Timer
         let secondWatchTime = 7;
         broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
 
@@ -190,14 +186,13 @@ function startSecondWatchPhase(tableId, roundId) {
             secondWatchTime--;
             if (secondWatchTime <= 0) {
                 clearInterval(secondTimer);
-                // 🔥 STEP 8: Hide and Winner
                 broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
                 startFindWinnerPhase(tableId, roundId);
             } else {
                 broadcastToTable(tableId, { type: "game:watch3card:tick", seconds: secondWatchTime, roundId });
             }
         }, 1000);
-    }, 1500); // 1.5s delay for 3rd card animation
+    }, 1500); 
 }
 
 function startFindWinnerPhase(tableId, roundId) {

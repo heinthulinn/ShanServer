@@ -122,21 +122,32 @@ function handleDealFinished(ws, data) {
     broadcastToTable(tableId, { type: "game:watch:start", seconds: remainingWatch, roundId });
    // broadcastToTable(tableId,{type:"ui:cardview:show", roundId});
     
-    table.watchTimer = setInterval(() => {
-      remainingWatch--;
-      if (remainingWatch <= 0) {
-        clearInterval(table.watchTimer);
-        table.watchTimer = null;
-        broadcastToTable(tableId,{type:"ui:cardview:hide", roundId});
-        // 3. PROCESS FINAL DRAWS (Requests + Auto-draw < 4)
-        processFinalDraws(tableId,roundId);
-        // 4. PHASE 2: WATCH 3 CARDS
-        startSecondWatchPhase(tableId, roundId);
+   // ... inside handleDealFinished ...
+   table.watchTimer = setInterval(() => {
+    remainingWatch--;
+    if (remainingWatch <= 0) {
+      clearInterval(table.watchTimer);
+      table.watchTimer = null;
+      broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
 
+      // 1. Process the draws first
+      processFinalDraws(tableId, roundId);
+
+      // 2. CHECK: Did anyone actually get a 3rd card?
+      const anyoneHasThreeCards = table.players.some(p => !p.waiting && p.cards.length === 3);
+
+      if (anyoneHasThreeCards) {
+          // Only start the 7rd-card watch phase if there are 3rd cards to look at
+          startSecondWatchPhase(tableId, roundId);
       } else {
-        broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
+          console.log("⏩ [SKIP] No players have 3 cards. Skipping Phase 2.");
+          startFindWinnerPhase(tableId, roundId);
       }
-    }, 1000);
+
+    } else {
+      broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
+    }
+  }, 1000);
 }
 
 function processFinalDraws(tableId, roundId) {

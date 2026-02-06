@@ -56,7 +56,6 @@ function joinTable(ws, d) {
     isAi: false,
     ready: false,
     waiting: table.gameInProgress,
-    ws: ws,
     socketId: ws._socket?.remotePort
   };
 

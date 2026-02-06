@@ -20,7 +20,6 @@ function startGame(ws, data) {
     const tableId = data.tableId;
     const table = tables[tableId];
     if (!table) return;
-    
 
    // ✅ NO MORE DEDUCTION HERE. 
     // It was already handled in gameFlow.assignDealerForRound

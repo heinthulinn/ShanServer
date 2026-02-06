@@ -140,11 +140,24 @@ function handleDealFinished(ws, data) {
 
     const dealer = table.players.find(p => p.isDealer);
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
+
+   // If dealer has 8 or 9, we still show cards but skip the drawing phase
     if (dealerRes.points >= 8) {
+        // 1. Tell the clients the dealer has a natural
         broadcastToTable(tableId, { type: "game:dealer:natural", points: dealerRes.points });
-        return startFindWinnerPhase(tableId, roundId);
+        
+        // 2. Show the cards for 5 seconds so they can see their "fate"
+        broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+
+        setTimeout(() => {
+            broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
+            startFindWinnerPhase(tableId, roundId);
+        }, 5000); // 5 second "mercy" look
+        
+        return; // Exit here so we don't trigger the normal drawing timer
     }
 
+    // --- NORMAL FLOW (Dealer < 8) ---
     setTimeout(() => {
         broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
         let remainingWatch = 7;

@@ -83,7 +83,23 @@ function handleGameResult(ws, data)
   if (!table) return;
   const player = table.players.find(p => p.seatId == body.seatId);
   if (player) player.balance += Number(body.updatePoint || 0);
-  broadcastToTable(table.tableId, { type: "table:update", tableId: table.tableId, players: table.players });
+
+  // ❌ THIS LINE IS THE KILLER:
+  // broadcastToTable(table.tableId, { type: "table:update", tableId: table.tableId, players: table.players });
+  
+  // ✅ CHANGE TO THIS (Clean the players list):
+  broadcastToTable(table.tableId, { 
+      type: "table:update", 
+      tableId: table.tableId, 
+      players: table.players.map(p => ({
+          username: p.username,
+          balance: p.balance,
+          seatId: p.seatId,
+          isAi: p.isAi,
+          ready: p.ready
+      }))
+  });
+
   wsSend(ws, { type: "game:result:res", success: true });
 }
 

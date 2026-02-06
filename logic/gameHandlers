@@ -306,6 +306,9 @@ function startPayoutPhase(tableId, roundId) {
         payoutTime--;
         if (payoutTime <= 0) {
             clearInterval(table.payoutTimer);
+            // 🔥 ADD THIS LINE RIGHT HERE! 
+            // Without this, ShanPhaseHandler.cs NEVER gets the signal to clean the UI.
+            broadcastToTable(tableId, { type: "game:payout:end", roundId: roundId });
             scheduleNextRound(tableId);
         } else {
             broadcastToTable(tableId, { type: "game:payout:tick", seconds: payoutTime, roundId });

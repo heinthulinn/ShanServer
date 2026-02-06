@@ -104,7 +104,6 @@ function handleDealFinished(ws, data) {
     if (!table || roundId !== table.roundId || table.dealAckReceived) return;
     table.dealAckReceived = true;
 
-    // Natural Check
     const dealer = table.players.find(p => p.isDealer);
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
     if (dealerRes.points >= 8) {
@@ -112,7 +111,6 @@ function handleDealFinished(ws, data) {
         return startFindWinnerPhase(tableId, roundId);
     }
 
-    // Phase 1: Show 2 cards after 0.5s delay
     setTimeout(() => {
         broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
         let remainingWatch = 7;
@@ -123,8 +121,6 @@ function handleDealFinished(ws, data) {
             if (remainingWatch <= 0) {
                 clearInterval(table.watchTimer);
                 broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
-                
-                // 🔥 Transition to Draw Phase
                 processFinalDraws(tableId, roundId); 
             } else {
                 broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
@@ -137,6 +133,8 @@ function processFinalDraws(tableId, roundId) {
     const table = tables[tableId];
     let anyoneDrew = false;
 
+    console.log(`--- [DRAW PHASE START] Table: ${tableId} ---`);
+
     table.players.forEach(p => {
         if (p.waiting) return;
         const res = gameHelpers.calculateShanResult(p.cards);
@@ -144,44 +142,52 @@ function processFinalDraws(tableId, roundId) {
 
         if (p.isAi && res.points < 4) p.drawAction = "draw";
 
+        // AUTO DRAW LOGIC
         if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {
             if (p.cards.length === 2) {
                 const card = table.deck[table.deckIndex++];
                 p.cards.push(card);
                 anyoneDrew = true;
                 
+                const cardName = `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`;
+                
+                // 🔥 LOG: WHO TOOK 3RD CARD
+                console.log(`✅ [DRAW] Player: ${p.username} | Reason: ${p.drawAction === "draw" ? "Manual/AI" : "Auto-Draw"} | Card: ${cardName}`);
+
                 broadcastToTable(tableId, { 
                     type: "game:player:draw", 
                     username: p.username, 
-                    card: `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`
+                    card: cardName
                 });
             }
+        } else {
+            console.log(`❌ [STAY] Player: ${p.username} | Points: ${res.points}`);
         }
     });
 
-    // 🔥 THE BOSS MOVE: 
-    // If anyone took a 3rd card, start the Second Watch Phase 
-    // (This function has its own 1.5s delay inside it)
     if (anyoneDrew) {
-        console.log("📡 3rd cards dealt. Moving to Second Watch Phase...");
         startSecondWatchPhase(tableId, roundId);
     } else {
-        console.log("📡 No one drew. Moving to Winner Phase...");
         startFindWinnerPhase(tableId, roundId);
     }
 }
+
 function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
 
     setTimeout(() => {
-        // Only show UI to players who actually have 3 cards
+        console.log(`--- [SECOND WATCH] Showing UI to 3-card players ---`);
+
         table.players.forEach(p => {
-            if (p.cards && p.cards.length === 3 && p.ws) {
-                wsSend(p.ws, { type: "ui:cardview:show", roundId });
+            // Check card length AND ensure we have a valid socket to send to
+            if (p.cards && p.cards.length === 3) {
+                if (p.ws || p.socket) {
+                    console.log(`📱 [UI_SHOW] Sending CardView to: ${p.username}`);
+                    wsSend(p.ws || p.socket, { type: "ui:cardview:show", roundId });
+                }
             }
         });
 
-        // The timer itself still needs to be seen by everyone
         let secondWatchTime = 7;
         broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
 

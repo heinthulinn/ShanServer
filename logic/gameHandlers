@@ -8,42 +8,57 @@ const { payoutWinners } = require("./payout");
 const gameHelpers = require("./gameHelpers");
 
 function playerReady(ws, data) {
-  const table = tables[data.tableId];
-  if (!table) return;
-  const player = table.players.find(p => p.username === data.username && !p.isAi);
-  if (!player) return;
-  // 🔥 ADD THIS LINE
-  player.ws = ws;
-
-  if (table.roundInProgress) {
-    wsSend(ws, {
-      type: "table:full:update",
-      tableId: table.tableId,
-      gameInProgress: table.gameInProgress,
+    const table = tables[data.tableId];
+    if (!table) return;
+    const player = table.players.find(p => p.username === data.username && !p.isAi);
+    if (!player) return;
+  
+    player.ws = ws; // Keep this for server logic
+  
+    if (table.roundInProgress) {
+      // This part is already clean in your code
+      wsSend(ws, {
+        type: "table:full:update",
+        tableId: table.tableId,
+        gameInProgress: table.gameInProgress,
+        players: table.players.map(p => ({
+          seatId: p.seatId,
+          username: p.username,
+          balance: p.balance,
+          isAi: p.isAi,
+          ready: p.ready,
+          waiting: p.waiting,
+          currentBet: p.currentBet || 0,
+          cards: p.cards || []
+        }))
+      });
+      return;
+    }
+  
+    if (player.ready) return;
+    player.ready = true;
+  
+    // 🔥 FIX: Clean the broadcast here so Unity doesn't crash
+    broadcastToTable(table.tableId, { 
+      type: "table:full:update", 
+      tableId: table.tableId, 
+      gameInProgress: table.gameInProgress, 
       players: table.players.map(p => ({
-        seatId: p.seatId,
-        username: p.username,
-        balance: p.balance,
-        isAi: p.isAi,
-        ready: p.ready,
-        waiting: p.waiting,
-        currentBet: p.currentBet || 0,
-        cards: p.cards || []
+          seatId: p.seatId,
+          username: p.username,
+          balance: p.balance,
+          isAi: p.isAi,
+          ready: p.ready,
+          waiting: p.waiting
       }))
     });
-    return;
+  
+    const preRoundPlayers = table.players.filter(p => !p.waiting && !table.roundInProgress);
+    if (preRoundPlayers.every(p => p.ready)) {
+      table.autoStartCalled = true;
+      gameFlow.autoStart(table);
+    }
   }
-
-  if (player.ready) return;
-  player.ready = true;
-  broadcastToTable(table.tableId, { type: "table:full:update", tableId: table.tableId, gameInProgress: table.gameInProgress, players: table.players });
-
-  const preRoundPlayers = table.players.filter(p => !p.waiting && !table.roundInProgress);
-  if (preRoundPlayers.every(p => p.ready)) {
-    table.autoStartCalled = true;
-    gameFlow.autoStart(table);
-  }
-}
 
 function handlePlayerBet(ws, data) {
   const table = tables[data.tableId];

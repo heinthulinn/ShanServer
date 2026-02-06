@@ -12,7 +12,8 @@ function playerReady(ws, data) {
   if (!table) return;
   const player = table.players.find(p => p.username === data.username && !p.isAi);
   if (!player) return;
-  
+  // 🔥 ADD THIS LINE
+  player.ws = ws;
 
   if (table.roundInProgress) {
     wsSend(ws, {
@@ -79,7 +80,8 @@ function handlePlayerDrawRequest(ws, data)
 
   const player = table.players.find(p => p.username === username);
   if (!player) return;
-
+    // 🔥 ADD THIS LINE
+  player.ws = ws;
   player.drawAction = action; 
   console.log(`📩 [ACTION] ${username} wants to ${action}`);
 }

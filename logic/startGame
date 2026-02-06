@@ -20,13 +20,7 @@ function startGame(ws, data) {
     const tableId = data.tableId;
     const table = tables[tableId];
     if (!table) return;
-
-    // 🔥 NO BULLSHIT FIX: Sync the current requester's socket 
-    // to the player object right now.
-    const sender = table.players.find(p => p.username === ws.username);
-    if (sender && !sender.ws) {
-        sender.ws = ws;
-    }
+    
 
    // ✅ NO MORE DEDUCTION HERE. 
     // It was already handled in gameFlow.assignDealerForRound

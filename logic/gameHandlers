@@ -175,10 +175,14 @@ function startSecondWatchPhase(tableId, roundId) {
 
     // Wait 1.5s for 3rd card animation to land
     setTimeout(() => {
-        // FIX: Use broadcastToTable so everyone sees the updated 3-card view
-        broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+        // Only show UI to players who actually have 3 cards
+        table.players.forEach(p => {
+            if (p.cards && p.cards.length === 3 && p.ws) {
+                wsSend(p.ws, { type: "ui:cardview:show", roundId });
+            }
+        });
 
-        // Final 7s Watch Timer
+        // The timer itself still needs to be seen by everyone
         let secondWatchTime = 7;
         broadcastToTable(tableId, { type: "game:watch3card:start", seconds: secondWatchTime, roundId });
 

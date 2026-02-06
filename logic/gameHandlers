@@ -176,15 +176,28 @@ function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
 
     setTimeout(() => {
-        console.log(`--- [SECOND WATCH] Showing UI to 3-card players ---`);
+        console.log(`--- [SECOND WATCH] Checking ${table.players.length} players for 3rd card UI ---`);
 
         table.players.forEach(p => {
-            // Check card length AND ensure we have a valid socket to send to
-            if (p.cards && p.cards.length === 3) {
-                if (p.ws || p.socket) {
-                    console.log(`📱 [UI_SHOW] Sending CardView to: ${p.username}`);
-                    wsSend(p.ws || p.socket, { type: "ui:cardview:show", roundId });
+            const cardCount = p.cards ? p.cards.length : 0;
+            
+            if (cardCount === 3) {
+                // Determine if player is AI or Human
+                if (p.isAi) {
+                    console.log(`🤖 [SKIP] ${p.username} is AI (No UI needed)`);
+                    return;
                 }
+
+                // Check for the socket
+                const socket = p.ws || p.socket; 
+                if (socket) {
+                    console.log(`📱 [UI_SHOW] SUCCESS: Sending CardView to human: ${p.username}`);
+                    wsSend(socket, { type: "ui:cardview:show", roundId });
+                } else {
+                    console.log(`⚠️ [ERROR] ${p.username} has 3 cards but NO SOCKET (ws) found in player object!`);
+                }
+            } else {
+                console.log(`ℹ️ [SKIP] ${p.username} has ${cardCount} cards (No UI needed)`);
             }
         });
 

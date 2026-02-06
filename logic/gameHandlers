@@ -173,7 +173,6 @@ function processFinalDraws(tableId, roundId) {
 function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
 
-    // Wait 1.5s for 3rd card animation to land
     setTimeout(() => {
         // Only show UI to players who actually have 3 cards
         table.players.forEach(p => {

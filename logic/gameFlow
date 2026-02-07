@@ -142,24 +142,44 @@ function startGameForTable(table) {
   table.roundInProgress = true; 
   table.gameInProgress = true;
   
-  assignDealerForRound(table);
-  
-  table.countdown = 3;
-  broadcastToTable(table.tableId, { type: "game:countdown", seconds: table.countdown });
+  // 1. Check who the dealer IS before we run assignment logic
+  const oldDealerName = table.currentDealerName;
 
-  table.countdownInterval = setInterval(() => {
-    table.countdown--;
-    if (table.countdown > 0) {
-      broadcastToTable(table.tableId, { type: "game:countdown", seconds: table.countdown });
-    } else {
-      clearInterval(table.countdownInterval);
-      table.countdownInterval = null;
-      
-      broadcastToTable(table.tableId, { type: "game:countdown", seconds: 0 });
-      console.log(`[COUNTDOWN FINISHED] table=${table.tableId}`);
-      startBettingPhase(table);
-    }
-  }, 1000);
+  // 2. Run the assignment (this updates table.currentDealerName)
+  assignDealerForRound(table);
+
+  const newDealer = table.players.find(p => p.username === table.currentDealerName);
+  
+  // 3. Determine delay
+  let startDelay = 0;
+
+  // If the dealer name changed, or if this is the very first dealer of the session
+  if (oldDealerName !== table.currentDealerName) {
+    startDelay = 3000; // 3 seconds for the "New Dealer" drama
+    broadcastToTable(table.tableId, { 
+        type: "game:dealer:changed", 
+        username: newDealer.username, 
+        seatId: newDealer.seatId 
+    });
+  }
+
+  // 4. Wrap the countdown in the delay
+  setTimeout(() => {
+    table.countdown = 3;
+    broadcastToTable(table.tableId, { type: "game:countdown", seconds: table.countdown });
+
+    table.countdownInterval = setInterval(() => {
+      table.countdown--;
+      if (table.countdown > 0) {
+        broadcastToTable(table.tableId, { type: "game:countdown", seconds: table.countdown });
+      } else {
+        clearInterval(table.countdownInterval);
+        table.countdownInterval = null;
+        broadcastToTable(table.tableId, { type: "game:countdown", seconds: 0 });
+        startBettingPhase(table);
+      }
+    }, 1000);
+  }, startDelay); 
 }
 
 function generateAIBet(table, player) {

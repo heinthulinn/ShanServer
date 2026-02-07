@@ -36,30 +36,22 @@ function assignDealerForRound(table) {
   const minBet = table.minBet || table.defaultBet;
   const buyInAmount = minBet * 10;
 
-  // --- 🔄 ROTATION LOGIC START ---
-  // Ensure the round counter exists
+  // --- 🔄 ROTATION LOGIC ---
   table.dealerRoundsPlayed = table.dealerRoundsPlayed || 0;
 
-  // Rule 1: Rotate if Warning is active and 3 bonus rounds are over
   const warningExpired = table.isWarningActive && table.dealerWarningRounds >= 3;
-  
-  // Rule 2: Rotate if they hit 5 rounds and NO warning was triggered
-  const normalSessionExpired = !table.isWarningActive && table.dealerRoundsPlayed >= 2;
-
-  // Rule 3: Rotate if they are broke
+  const normalSessionExpired = !table.isWarningActive && table.dealerRoundsPlayed >= 2; // Set to 5 for standard play
   const isBroke = table.bankerPot <= 0 && table.currentDealerName;
 
   if (warningExpired || normalSessionExpired || isBroke) {
       console.log(`🔄 Rotating Dealer: Reason(Warning:${warningExpired}, Normal:${normalSessionExpired}, Broke:${isBroke})`);
       finalizeBankerSession(table);
-      table.dealerRoundsPlayed = 0; // Reset counter for next person
+      table.dealerRoundsPlayed = 0; 
   }
-  // --- 🔄 ROTATION LOGIC END ---
 
+  // --- DEALER SELECTION ---
   if (!table.bankerPot || table.bankerPot <= 0) {
-      if (table.currentDealerName) {
-          finalizeBankerSession(table);
-      }
+      if (table.currentDealerName) finalizeBankerSession(table);
 
       let startIndex = table.rtpStats.dealerIndex || 0;
       let dealerFound = false;
@@ -72,11 +64,9 @@ function assignDealerForRound(table) {
           candidate.balance -= buyInAmount;
           table.bankerPot = buyInAmount;
           table.dealerStartPot = buyInAmount;
-          
           table.currentDealerName = candidate.username;
           table.rtpStats.dealerIndex = index;
           
-          // Reset all state for the NEW dealer
           table.isWarningActive = false;
           table.dealerWarningRounds = 0;
           table.dealerRoundsPlayed = 0; 
@@ -84,35 +74,36 @@ function assignDealerForRound(table) {
           break;
         }
       }
-
-      if (!dealerFound) {
-        console.log("❌ NO VALID DEALER");
-        return;
-      }
+      if (!dealerFound) return;
   }
 
-  // Set dealer flags
+  // Set flags
   table.players.forEach(p => p.isDealer = (p.username === table.currentDealerName));
   const dealer = table.players.find(p => p.isDealer);
   dealer.bankerFund = table.bankerPot;
 
-  // Increment normal round counter
+  // 1. Increment standard rounds
   table.dealerRoundsPlayed++;
 
-  // 🔥 3X PROFIT WARNING TRIGGER
-  // If they hit 3x profit, it overrides the normal 5-round limit with a 3-round bonus/warning
+  // 2. 🔥 HANDLE WARNING (3X Profit)
   if (!table.isWarningActive && table.bankerPot >= (table.dealerStartPot * 3)) {
       table.isWarningActive = true;
       table.dealerWarningRounds = 0; 
-      broadcastToTable(table.tableId, { type: "game:dealer:warning", dealer: dealer.username });
   }
 
-  // Increment warning counter if active
+  // 3. Increment and Broadcast Warning if active
   if (table.isWarningActive) {
-      table.dealerWarningRounds++;
+    table.dealerWarningRounds++; 
+    
+    broadcastToTable(table.tableId, { 
+        type: "game:dealer:warning", 
+        dealer: dealer.username,
+        currentWarningRound: table.dealerWarningRounds, 
+        totalWarningRounds: 3 
+    });
   }
 
-  // --- Broadcast Updates to Unity ---
+  // 4. Update Unity on the full table state
   broadcastToTable(table.tableId, {
     type: "table:full:update",
     tableId: table.tableId,
@@ -126,14 +117,16 @@ function assignDealerForRound(table) {
     }))
   });
 
+  // 5. Final Dealer Assignment Sync
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",
     dealer: { 
       username: dealer.username, 
       seatId: dealer.seatId,
       isWarning: table.isWarningActive,
+      warningRound: table.dealerWarningRounds,
       bankerPot: table.bankerPot,
-      roundsPlayed: table.dealerRoundsPlayed // Useful for Unity UI
+      roundsPlayed: table.dealerRoundsPlayed 
     }
   });
 }

@@ -40,7 +40,7 @@ function assignDealerForRound(table) {
   table.dealerRoundsPlayed = table.dealerRoundsPlayed || 0;
 
   const warningExpired = table.isWarningActive && table.dealerWarningRounds >= 3;
-  const normalSessionExpired = !table.isWarningActive && table.dealerRoundsPlayed >= 2; // Set to 5 for standard play
+  const normalSessionExpired = !table.isWarningActive && table.dealerRoundsPlayed >= 5; // Set to 5 for standard play
   const isBroke = table.bankerPot <= 0 && table.currentDealerName;
 
   if (warningExpired || normalSessionExpired || isBroke) {

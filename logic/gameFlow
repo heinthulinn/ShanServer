@@ -36,9 +36,25 @@ function assignDealerForRound(table) {
   const minBet = table.minBet || table.defaultBet;
   const buyInAmount = minBet * 10;
 
-  if (table.isWarningActive && table.dealerWarningRounds >= 3) {
+  // --- 🔄 ROTATION LOGIC START ---
+  // Ensure the round counter exists
+  table.dealerRoundsPlayed = table.dealerRoundsPlayed || 0;
+
+  // Rule 1: Rotate if Warning is active and 3 bonus rounds are over
+  const warningExpired = table.isWarningActive && table.dealerWarningRounds >= 3;
+  
+  // Rule 2: Rotate if they hit 5 rounds and NO warning was triggered
+  const normalSessionExpired = !table.isWarningActive && table.dealerRoundsPlayed >= 5;
+
+  // Rule 3: Rotate if they are broke
+  const isBroke = table.bankerPot <= 0 && table.currentDealerName;
+
+  if (warningExpired || normalSessionExpired || isBroke) {
+      console.log(`🔄 Rotating Dealer: Reason(Warning:${warningExpired}, Normal:${normalSessionExpired}, Broke:${isBroke})`);
       finalizeBankerSession(table);
+      table.dealerRoundsPlayed = 0; // Reset counter for next person
   }
+  // --- 🔄 ROTATION LOGIC END ---
 
   if (!table.bankerPot || table.bankerPot <= 0) {
       if (table.currentDealerName) {
@@ -53,40 +69,50 @@ function assignDealerForRound(table) {
         const candidate = activePlayers[index];
 
         if (candidate.balance >= buyInAmount) {
-          // 💰 DEDUCT IMMEDIATELY
           candidate.balance -= buyInAmount;
           table.bankerPot = buyInAmount;
           table.dealerStartPot = buyInAmount;
           
           table.currentDealerName = candidate.username;
           table.rtpStats.dealerIndex = index;
+          
+          // Reset all state for the NEW dealer
           table.isWarningActive = false;
           table.dealerWarningRounds = 0;
+          table.dealerRoundsPlayed = 0; 
           dealerFound = true;
           break;
         }
       }
 
       if (!dealerFound) {
-        console.log("❌ NO VALID DEALER (Insufficient balance for 10x rule)");
+        console.log("❌ NO VALID DEALER");
         return;
       }
   }
 
+  // Set dealer flags
   table.players.forEach(p => p.isDealer = (p.username === table.currentDealerName));
   const dealer = table.players.find(p => p.isDealer);
+  dealer.bankerFund = table.bankerPot;
 
-// 🔥 ADD THIS
-dealer.bankerFund = table.bankerPot;
+  // Increment normal round counter
+  table.dealerRoundsPlayed++;
+
+  // 🔥 3X PROFIT WARNING TRIGGER
+  // If they hit 3x profit, it overrides the normal 5-round limit with a 3-round bonus/warning
   if (!table.isWarningActive && table.bankerPot >= (table.dealerStartPot * 3)) {
       table.isWarningActive = true;
+      table.dealerWarningRounds = 0; 
       broadcastToTable(table.tableId, { type: "game:dealer:warning", dealer: dealer.username });
   }
 
-  if (table.isWarningActive) table.dealerWarningRounds++;
+  // Increment warning counter if active
+  if (table.isWarningActive) {
+      table.dealerWarningRounds++;
+  }
 
-  // 🔥 CRITICAL: BROADCAST BALANCE UPDATE NOW
-  // This tells Unity the dealer's balance changed RIGHT NOW, before betting starts.
+  // --- Broadcast Updates to Unity ---
   broadcastToTable(table.tableId, {
     type: "table:full:update",
     tableId: table.tableId,
@@ -100,14 +126,14 @@ dealer.bankerFund = table.bankerPot;
     }))
   });
 
-  // Original Dealer Assigned Broadcast
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",
     dealer: { 
       username: dealer.username, 
       seatId: dealer.seatId,
       isWarning: table.isWarningActive,
-      bankerPot: table.bankerPot
+      bankerPot: table.bankerPot,
+      roundsPlayed: table.dealerRoundsPlayed // Useful for Unity UI
     }
   });
 }

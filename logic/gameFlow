@@ -44,7 +44,7 @@ function assignDealerForRound(table) {
   const warningExpired = table.isWarningActive && table.dealerWarningRounds >= 3;
   
   // Rule 2: Rotate if they hit 5 rounds and NO warning was triggered
-  const normalSessionExpired = !table.isWarningActive && table.dealerRoundsPlayed >= 5;
+  const normalSessionExpired = !table.isWarningActive && table.dealerRoundsPlayed >= 2;
 
   // Rule 3: Rotate if they are broke
   const isBroke = table.bankerPot <= 0 && table.currentDealerName;

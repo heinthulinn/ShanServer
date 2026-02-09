@@ -316,10 +316,10 @@ function startFindWinnerPhase(tableId, roundId) {
 
     table.findWinnerTimer = setInterval(() => {
         findWinnerTime--;
+
         if (findWinnerTime <= 0) {
             clearInterval(table.findWinnerTimer);
             const activePlayers = table.players.filter(p => !p.waiting);
-            
             // LOG DEALER FINAL STATE
             const dealer = activePlayers.find(p => p.isDealer);
             const dRes = gameHelpers.calculateShanResult(dealer.cards);
@@ -328,12 +328,21 @@ function startFindWinnerPhase(tableId, roundId) {
             const winnerPlayers = gameHelpers.decideDealerWinners(activePlayers);
             table.currentWinners = winnerPlayers.map(p => p.username || p.name);
 
+            const tableResult = gameHelpers.buildTableResult(table);
+            // 3️⃣ 🔥 BROADCAST FULL RESULT (THIS WAS MISSING)
+            broadcastToTable(tableId, {
+                type: "game:start:result",
+                ...tableResult
+            });
+
             // LOG INDIVIDUAL PLAYER RESULTS
             activePlayers.forEach(p => {
                 if (p.isDealer) return;
+                const res = gameHelpers.calculateShanResult(p.cards);
                 const isWinner = table.currentWinners.includes(p.username);
-                console.log(`PLAYER ${p.username} ${isWinner ? "WINS" : "LOSES"} with ${p.points} pts (x${p.multiplier || 1})`);
+                console.log(`PLAYER ${p.username} ${isWinner ? "WINS" : "LOSES"} with ${res.points} pts (x${res.multiplier || 1})`);
             });
+            
 
             startPayoutPhase(tableId, roundId);
         } else {

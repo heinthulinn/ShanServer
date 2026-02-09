@@ -109,10 +109,35 @@ function decideDealerWinners(players) {
     return winners;
 }
 
+function buildTableResult(table) {
+    return {
+        tableId: table.tableId,
+        roundId: table.roundId,
+        pot: table.players.reduce((sum, p) => sum + (p.currentBet || 0), 0),
+        dealer: table.players.find(p => p.isDealer)?.username,
+        players: table.players.map(p => {
+            const hand = evaluateHand(p.cards);
+            return {
+                name: p.username,
+                isAi: p.isAi,
+                seatId: p.seatId,
+                unit: p.balance,
+                cards: p.cards,
+                points: hand.points,
+                isDo: hand.isDo,
+                multiplier: hand.multiplier,
+                isDealer: p.isDealer
+            };
+        })
+    };
+}
+
+
 module.exports = {
     evaluateHand,
     unityRank,
     forceWinningHand,
     decideDealerWinners,
-    calculateShanResult, 
+    calculateShanResult,
+    buildTableResult 
 };

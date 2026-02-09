@@ -335,7 +335,7 @@ function startFindWinnerPhase(tableId, roundId) {
             const tableResult = gameHelpers.buildTableResult(table);
             // 3️⃣ 🔥 BROADCAST FULL RESULT (THIS WAS MISSING)
             broadcastToTable(tableId, {
-                type: "game:start:result",
+                type: "game:round:result",
                 ...tableResult
             });
 

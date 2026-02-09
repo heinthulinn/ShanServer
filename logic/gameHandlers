@@ -322,6 +322,10 @@ function startFindWinnerPhase(tableId, roundId) {
             const activePlayers = table.players.filter(p => !p.waiting);
             // LOG DEALER FINAL STATE
             const dealer = activePlayers.find(p => p.isDealer);
+            if (!dealer) {
+                console.error("❌ Dealer not found at findWinner phase");
+                return;
+            }
             const dRes = gameHelpers.calculateShanResult(dealer.cards);
             console.log(`DEALER Hand: ${dRes.points} points | Multiplier: x${dRes.payoutMultiplier}`);
 

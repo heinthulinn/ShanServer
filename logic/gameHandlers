@@ -175,18 +175,33 @@ function handleDealFinished(ws, data) {
     setTimeout(() => {
         broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
         let remainingWatch = 7;
-        broadcastToTable(tableId, { type: "game:watch:start", seconds: remainingWatch, roundId });
+        broadcastToTable(tableId, { type: "game:watch2card:start", seconds: remainingWatch, roundId });
 
         table.watchTimer = setInterval(() => {
             remainingWatch--;
             if (remainingWatch <= 0) {
                 clearInterval(table.watchTimer);
-                broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
-                processFinalDraws(tableId, roundId); 
+        
+                broadcastToTable(tableId, {
+                    type: "game:watch2card:end",
+                    roundId
+                });
+        
+                broadcastToTable(tableId, {
+                    type: "ui:cardview:hide",
+                    roundId
+                });
+        
+                processFinalDraws(tableId, roundId);
             } else {
-                broadcastToTable(tableId, { type: "game:watch:tick", seconds: remainingWatch, roundId });
+                broadcastToTable(tableId, {
+                    type: "game:watch2card:tick",
+                    seconds: remainingWatch,
+                    roundId
+                });
             }
         }, 1000);
+        
     }, 500); 
 }
 
@@ -267,14 +282,30 @@ function startSecondWatchPhase(tableId, roundId) {
 
         const secondTimer = setInterval(() => {
             secondWatchTime--;
+        
             if (secondWatchTime <= 0) {
                 clearInterval(secondTimer);
-                broadcastToTable(tableId, { type: "ui:cardview:hide", roundId });
+        
+                broadcastToTable(tableId, {
+                    type: "game:watch3card:end",
+                    roundId
+                });
+        
+                broadcastToTable(tableId, {
+                    type: "ui:cardview:hide",
+                    roundId
+                });
+        
                 startFindWinnerPhase(tableId, roundId);
             } else {
-                broadcastToTable(tableId, { type: "game:watch3card:tick", seconds: secondWatchTime, roundId });
+                broadcastToTable(tableId, {
+                    type: "game:watch3card:tick",
+                    seconds: secondWatchTime,
+                    roundId
+                });
             }
         }, 1000);
+        
     }, 1500); 
 }
 

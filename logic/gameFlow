@@ -223,7 +223,17 @@ function startBettingPhase(table) {
   table.betTime = 5;
   table.players.forEach(p => { p.currentBet = 0; });
   
-  broadcastToTable(table.tableId, { type: "game:bet:start", seconds: table.betTime });
+  broadcastToTable(table.tableId, {
+    type: "game:bet:start",
+    seconds: table.betTime,
+  
+    // 🔥 ADD THESE
+    tableId: table.tableId,
+    defaultBet: table.defaultBet,
+    minBet: table.minBet,
+    maxBet: table.maxBet
+  });
+  
 
   table.players.forEach(p => {
     if (p.isAi && !p.isDealer) p.currentBet = generateAIBet(table, p);

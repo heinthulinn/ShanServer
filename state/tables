@@ -1,11 +1,11 @@
 // ====== table.js ======
 const tableTypes = [
   { type: "Newbie", minBuyIn: 1000, maxBuyIn: 100000, defaultBet: 100, minBet:100,maxBet:500 },
-  { type: "Junior", minBuyIn: 3000, maxBuyIn: 300000, defaultBet: 300, minBet:200,maxBet:1000 },
-  { type: "Senior", minBuyIn: 5000, maxBuyIn: 500000, defaultBet: 500, minBet:300,maxBet:2000 },
-  { type: "Boss", minBuyIn: 10000, maxBuyIn: Infinity, defaultBet: 1000, minBet:400,maxBet:3000 },
-  { type: "Millionaire", minBuyIn: 30000, maxBuyIn: Infinity, defaultBet: 3000, minBet:500,maxBet:4000 },
-  { type: "Billionaire", minBuyIn: 50000, maxBuyIn: Infinity, defaultBet: 5000, minBet:600,maxBet:5000 }
+  { type: "Junior", minBuyIn: 3000, maxBuyIn: 300000, defaultBet: 300, minBet:300,maxBet:1000 },
+  { type: "Senior", minBuyIn: 5000, maxBuyIn: 500000, defaultBet: 500, minBet:500,maxBet:2000 },
+  { type: "Boss", minBuyIn: 10000, maxBuyIn: Infinity, defaultBet: 1000, minBet:1000,maxBet:3000 },
+  { type: "Millionaire", minBuyIn: 30000, maxBuyIn: Infinity, defaultBet: 3000, minBet:3000,maxBet:4000 },
+  { type: "Billionaire", minBuyIn: 50000, maxBuyIn: Infinity, defaultBet: 5000, minBet:5000,maxBet:5000 }
 ];
 
 const tables = {};

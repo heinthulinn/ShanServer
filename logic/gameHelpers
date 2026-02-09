@@ -3,7 +3,10 @@
 // Import the new Shan evaluation functions
 const { evaluateHand, compareHands } = require("./shanRules");// new
 const { createDeck, shuffle } = require("./dealCards");
-
+function formatCardsForUnity(cards) {
+    const suitMap = { 4: "S", 3: "H", 2: "D", 1: "C" };
+    return cards.map(c => `${c.rank}${suitMap[c.suit]}`);
+}
 /**
  * Get payout multiplier (ဆ) for a hand based on your Shan rules
  * 8, 9 points = 1x
@@ -40,8 +43,8 @@ function unityRank(player) {
     const hand = evaluateHand(player.cards);
     // We create a sortable score: (Points * 100) + (Power Score * 10) + SuitValue
     // This allows a simple numeric comparison.
-    const suitValue = player.hand.powerCard.suit; // 4: Spade, 3: Heart, etc.
-    const powerScore = getPowerScoreValue(player.hand.powerCard.rank); 
+    const suitValue = player.powerCard.suit; // 4: Spade, 3: Heart, etc.
+    const powerScore = getPowerScoreValue(hand.powerCard.rank); 
 
     return (hand.points * 1000) + (powerScore * 10) + suitValue;
 }
@@ -122,7 +125,7 @@ function buildTableResult(table) {
                 isAi: p.isAi,
                 seatId: p.seatId,
                 unit: p.balance,
-                cards: p.cards,
+                cards: formatCardsForUnity(p.cards),
                 points: hand.points,
                 isDo: hand.isDo,
                 multiplier: hand.multiplier,

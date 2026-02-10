@@ -333,7 +333,7 @@ function startSecondWatchPhase(tableId, roundId) {
                     roundId
                 });
         
-                startFindWinnerPhase(tableId, roundId);
+                startDealerDecisionPhase(tableId, roundId);
             } else {
                 broadcastToTable(tableId, {
                     type: "game:watch3card:tick",
@@ -345,6 +345,97 @@ function startSecondWatchPhase(tableId, roundId) {
         
     }, 1500); 
 }
+
+function startDealerDecisionPhase(tableId, roundId) {
+    const table = tables[tableId];
+    const dealer = table.players.find(p => p.isDealer);
+
+    console.log(`👑 [DEALER DECISION START] Table:${tableId} | Round:${roundId}`);
+
+    // 1️⃣ Catch all players who took 3rd card
+    const threeCardPlayers = table.players
+        .filter(p => p.cards && p.cards.length === 3)
+        .sort((a, b) => a.seatId - b.seatId);
+
+    console.log(`🎯 [3RD CARD PLAYERS]`, threeCardPlayers.map(p => `${p.username}(seat:${p.seatId})`));
+
+    // 2️⃣ Notify clients (Unity can animate seat-by-seat)
+    broadcastToTable(tableId, {
+        type: "game:dealer:action:start",
+        roundId,
+        players: threeCardPlayers.map(p => ({
+            username: p.username,
+            seatId: p.seatId
+        })),
+        seconds: 10
+    });
+
+    let decisionTime = 10;
+
+    table.dealerDecisionTimer = setInterval(() => {
+        decisionTime--;
+
+        if (decisionTime <= 0) {
+            clearInterval(table.dealerDecisionTimer);
+            table.dealerDecisionTimer = null;
+
+            console.log(`⏱️ [DEALER TIMEOUT] Dealer did not act → AUTO SKIP`);
+
+            broadcastToTable(tableId, {
+                type: "game:dealer:action:end",
+                action: "skip",
+                roundId
+            });
+
+            startFindWinnerPhase(tableId, roundId);
+        } else {
+            broadcastToTable(tableId, {
+                type: "game:dealer:action:tick",
+                seconds: decisionTime,
+                roundId
+            });
+        }
+    }, 1000);
+}
+
+function handleDealerDecision(ws, data) {
+    const { tableId, action } = data;
+    const table = tables[tableId];
+    if (!table) return;
+
+    const dealer = table.players.find(p => p.isDealer);
+    if (!dealer) return;
+
+    if (table.dealerDecisionTimer) {
+        clearInterval(table.dealerDecisionTimer);
+        table.dealerDecisionTimer = null;
+    }
+
+    console.log(`👑 [DEALER ACTION] ${action}`);
+
+    if (action === "draw" && dealer.cards.length === 2) {
+        const card = table.deck[table.deckIndex++];
+        dealer.cards.push(card);
+
+        const cardName = `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`;
+        console.log(`👑✅ [DEALER DRAW] Card:${cardName}`);
+
+        broadcastToTable(tableId, {
+            type: "game:dealer:draw",
+            card: cardName
+        });
+    }
+
+    broadcastToTable(tableId, {
+        type: "game:dealer:action:end",
+        action,
+        roundId: table.roundId
+    });
+
+    startFindWinnerPhase(tableId, table.roundId);
+}
+
+
 
 function startFindWinnerPhase(tableId, roundId) {
     const table = tables[tableId];

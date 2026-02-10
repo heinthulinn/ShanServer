@@ -212,7 +212,7 @@ function processFinalDraws(tableId, roundId) {
     console.log(`--- [DRAW PHASE START] Table: ${tableId} ---`);
 
     // ===============================
-    // 👑 DEALER DRAW LOGIC (EXPLICIT)
+    // 👑 DEALER AUTO DRAW (🔥 FIX)
     // ===============================
     const dealer = table.players.find(p => p.isDealer);
     if (dealer) {
@@ -220,36 +220,50 @@ function processFinalDraws(tableId, roundId) {
 
         console.log(`👑 [DEALER CHECK] Points: ${dealerRes.points} | Cards: ${dealer.cards.length}`);
 
-    } else {
-        console.log(`❌ [ERROR] Dealer not found during draw phase`);
+        if (
+            dealer.cards.length === 2 &&
+            dealerRes.points < 4 &&
+            !dealer.hasDrawn
+        ) {
+            const card = table.deck[table.deckIndex++];
+            dealer.cards.push(card);
+            dealer.hasDrawn = true;
+            anyoneDrew = true;
+
+            const cardName = `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`;
+            console.log(`👑✅ [DEALER AUTO DRAW] Card: ${cardName}`);
+
+            broadcastToTable(tableId, {
+                type: "game:dealer:auto_draw",
+                card: cardName,
+                roundId
+            });
+        }
     }
 
     // ===============================
-    // 👤 PLAYER DRAW LOGIC (AS-IS)
+    // 👤 PLAYER DRAW LOGIC (UNCHANGED)
     // ===============================
     table.players.forEach(p => {
         if (p.waiting || p.isDealer) return;
 
         const res = gameHelpers.calculateShanResult(p.cards);
-        if (res.points >= 8) return; 
+        if (res.points >= 8) return;
 
         if (p.isAi && res.points < 4) p.drawAction = "draw";
 
-        // AUTO DRAW LOGIC
         if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {
             if (p.cards.length === 2) {
                 const card = table.deck[table.deckIndex++];
                 p.cards.push(card);
                 anyoneDrew = true;
-                
-                const cardName = `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`;
-                
-                // 🔥 LOG: WHO TOOK 3RD CARD
-                console.log(`✅ [DRAW] Player: ${p.username} | Reason: ${p.drawAction === "draw" ? "Manual/AI" : "Auto-Draw"} | Card: ${cardName}`);
 
-                broadcastToTable(tableId, { 
-                    type: "game:player:draw", 
-                    username: p.username, 
+                const cardName = `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`;
+                console.log(`✅ [DRAW] Player: ${p.username} | Card: ${cardName}`);
+
+                broadcastToTable(tableId, {
+                    type: "game:player:draw",
+                    username: p.username,
                     card: cardName
                 });
             }
@@ -262,13 +276,12 @@ function processFinalDraws(tableId, roundId) {
     // ⏭ NEXT PHASE
     // ===============================
     if (anyoneDrew) {
-        console.log(`➡️ [NEXT] Second watch phase (3rd cards exist)`);
         startSecondWatchPhase(tableId, roundId);
     } else {
-        console.log(`➡️ [NEXT] No draws → Find winner phase`);
         startFindWinnerPhase(tableId, roundId);
     }
 }
+
 
 function startSecondWatchPhase(tableId, roundId) {
     const table = tables[tableId];
@@ -462,7 +475,7 @@ function executeDealerAction(tableId, roundId, action) {
             break;
         }
 
-        case "catchall": {
+        case "catch_all_players": {
             broadcastToTable(tableId, {
                 type: "game:dealer:catchall",
                 players: table.players.map(p => ({

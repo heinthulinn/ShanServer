@@ -419,14 +419,15 @@ function runAIDealerAction(tableId, roundId) {
     if (dealerRes.points < 4 && dealer.cards.length === 2) {
         action = "draw";
     } else if (threeCardPlayers.length > 0) {
-        action = "catch_3card_players";
+        action = "catch3cards";
     } else {
-        action = "catch_all_players";
+        action = "catchall";
     }
 
-    console.log(`🤖👑 [AI DEALER ACTION] ${action.toUpperCase()}`);
+    console.log(`🤖👑 [AI DEALER ACTION] ${action}`);
     executeDealerAction(tableId, roundId, action);
 }
+
 
 function executeDealerAction(tableId, roundId, action) {
     const table = tables[tableId];
@@ -444,7 +445,7 @@ function executeDealerAction(tableId, roundId, action) {
 
     switch (action) {
 
-        case "catch_3card_players": {
+        case "catch3cards": {
             const players = table.players
                 .filter(p => p.cards && p.cards.length === 3)
                 .sort((a, b) => a.seatId - b.seatId);
@@ -461,7 +462,7 @@ function executeDealerAction(tableId, roundId, action) {
             break;
         }
 
-        case "catch_all_players": {
+        case "catchall": {
             broadcastToTable(tableId, {
                 type: "game:dealer:catchall",
                 players: table.players.map(p => ({

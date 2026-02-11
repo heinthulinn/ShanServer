@@ -475,7 +475,7 @@ function executeDealerAction(tableId, roundId, action) {
             break;
         }
 
-        case "catchallplayers": {
+        case "catchall": {
             broadcastToTable(tableId, {
                 type: "game:dealer:catchall",
                 players: table.players.map(p => ({

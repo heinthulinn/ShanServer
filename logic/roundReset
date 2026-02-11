@@ -7,6 +7,8 @@ function resetPlayersForNextRound(table) {
     delete p.currentBet;
     delete p.cards;
     delete p.hand;
+    p.hasDrawn = false;
+    p.drawAction = null;
   });
 }
 

@@ -43,7 +43,7 @@ function unityRank(player) {
     const hand = evaluateHand(player.cards);
     // We create a sortable score: (Points * 100) + (Power Score * 10) + SuitValue
     // This allows a simple numeric comparison.
-    const suitValue = player.powerCard.suit; // 4: Spade, 3: Heart, etc.
+    const suitValue = hand.powerCard.suit; // 4: Spade, 3: Heart, etc.
     const powerScore = getPowerScoreValue(hand.powerCard.rank); 
 
     return (hand.points * 1000) + (powerScore * 10) + suitValue;
@@ -60,25 +60,23 @@ function getPowerScoreValue(rank) {
  */
 function forceWinningHand(minPoints) {
     let attempts = 0;
+
     while (attempts < 500) {
         const deck = createDeck();
         shuffle(deck);
 
-        // Try a 2-card hand first
         const cards = deck.slice(0, 2);
         const hand = evaluateHand(cards);
 
-        if (hand.points > minPoints) return cards;
-        
-        // Try a 3-card hand if 2 cards weren't enough
-        const cards3 = deck.slice(0, 3);
-        const hand3 = evaluateHand(cards3);
-        if (hand3.points > minPoints) return cards3;
+        if (hand.points > minPoints) {
+            return cards; // ONLY 2 CARDS
+        }
 
         attempts++;
     }
+
     console.warn("⚠️ forceWinningHand fallback triggered");
-    return createDeck().slice(0, 2); 
+    return createDeck().slice(0, 2);
 }
 
 /**

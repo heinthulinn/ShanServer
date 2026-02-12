@@ -47,35 +47,44 @@ function payoutWinners(table, players, winners) {
     const bet = p.currentBet || 0;
     if (bet <= 0) return;
 
-    const multiplier = p.multiplier || 1;
-    const totalStake = bet * multiplier;
-    let delta = 0;
+   // const multiplier = p.multiplier || 1;
+   // const totalStake = bet * multiplier;
+   let delta = 0;
+   let totalStake = 0;
+   
 
-    if (winnerNames.has(p.username)) {
-      // PLAYER WINS → dealer pays profit
-      delta = totalStake;
-      p.balance += (bet + delta);
-      dealerDelta -= delta;
+   if (winnerNames.has(p.username)) {
 
-      console.log(
-        `💵 WIN → ${p.username} | Bet:${bet} | x${multiplier} | Dealer pays:${delta}`
-      );
-    } else {
-      // PLAYER LOSES → dealer collects
-      delta = -totalStake;
+    const playerMultiplier = p.multiplier || 1;
+    totalStake = bet * playerMultiplier;
+  
+    delta = totalStake;
+    p.balance += (bet + delta);
+    dealerDelta -= delta;
+  
+    console.log(
+      `💵 WIN → ${p.username} | Bet:${bet} | x${playerMultiplier} | Dealer pays:${delta}`
+    );
+  }
+  else {
 
-      // Bet already deducted in collectBets()
-      const lossExtra = totalStake - bet;
-      if (lossExtra > 0) {
-        p.balance -= lossExtra;
-      }
-
-      dealerDelta += totalStake;
-
-      console.log(
-        `❌ LOSE → ${p.username} | Bet:${bet} | x${multiplier} | Player pays:${totalStake}`
-      );
+    const dealerMultiplier = dealer.multiplier || 1;
+    totalStake = bet * dealerMultiplier;
+  
+    delta = -totalStake;
+  
+    const lossExtra = totalStake - bet;
+    if (lossExtra > 0) {
+      p.balance -= lossExtra;
     }
+  
+    dealerDelta += totalStake;
+  
+    console.log(
+      `❌ LOSE → ${p.username} | Bet:${bet} | Dealer x${dealerMultiplier} | Player pays:${totalStake}`
+    );
+  }
+  
 
     results.push({
       username: p.username,

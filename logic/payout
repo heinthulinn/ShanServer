@@ -6,7 +6,6 @@
  */
 function collectBets(players) {
   players.forEach(p => {
-    // BANKER FIX: The dealer does not place a bet.
     if (p.isDealer) {
       p.currentBet = 0;
       return;
@@ -26,7 +25,8 @@ function collectBets(players) {
 
 /**
  * Payout winners and losers
- * Banker pays winners and collects from losers using the locked bankerFund.
+ * Dealer multiplier applies when dealer wins
+ * Player multiplier applies when player wins
  */
 function payoutWinners(table, players, winners) {
   const dealer = players.find(p => p.isDealer);
@@ -35,81 +35,87 @@ function payoutWinners(table, players, winners) {
     return [];
   }
 
-  // Locked 10x fund from dealer assignment
   const initialFund = dealer.bankerFund || 0;
-  const winnerNames = new Set(winners);
+
+  // Safety: remove undefined values
+  const winnerNames = new Set((winners || []).filter(Boolean));
+
   const results = [];
   let dealerDelta = 0;
 
   players.forEach(p => {
-    if (p.isDealer || p.waiting) return;
+    if (!p || p.isDealer || p.waiting) return;
 
     const bet = p.currentBet || 0;
     if (bet <= 0) return;
 
-   // const multiplier = p.multiplier || 1;
-   // const totalStake = bet * multiplier;
-   let delta = 0;
-   let totalStake = 0;
-   
+    let totalStake = 0;
+    let delta = 0;
 
-   if (winnerNames.has(p.username)) {
+    if (winnerNames.has(p.username)) {
+      // ✅ PLAYER WINS → dealer pays using PLAYER multiplier
+      const playerMultiplier = p.multiplier || 1;
+      totalStake = bet * playerMultiplier;
 
-    const playerMultiplier = p.multiplier || 1;
-    totalStake = bet * playerMultiplier;
-  
-    delta = totalStake;
-    p.balance += (bet + delta);
-    dealerDelta -= delta;
-  
-    console.log(
-      `💵 WIN → ${p.username} | Bet:${bet} | x${playerMultiplier} | Dealer pays:${delta}`
-    );
-  }
-  else {
+      delta = totalStake;
 
-    const dealerMultiplier = dealer.multiplier || 1;
-    totalStake = bet * dealerMultiplier;
-  
-    delta = -totalStake;
-  
-    const lossExtra = totalStake - bet;
-    if (lossExtra > 0) {
-      p.balance -= lossExtra;
+      // Return bet + profit
+      p.balance += bet + totalStake;
+
+      dealerDelta -= totalStake;
+
+      console.log(
+        `💵 WIN → ${p.username} | Bet:${bet} | x${playerMultiplier} | Dealer pays:${totalStake}`
+      );
+
+      results.push({
+        username: p.username,
+        delta: totalStake,
+        balance: p.balance,
+        multiplier: playerMultiplier,
+        isDealer: false
+      });
+
+    } else {
+      // ❌ PLAYER LOSES → dealer collects using DEALER multiplier
+      const dealerMultiplier = dealer.multiplier || 1;
+      totalStake = bet * dealerMultiplier;
+
+      delta = -totalStake;
+
+      // Bet already deducted in collectBets()
+      const lossExtra = totalStake - bet;
+      if (lossExtra > 0) {
+        p.balance -= lossExtra;
+      }
+
+      dealerDelta += totalStake;
+
+      console.log(
+        `❌ LOSE → ${p.username} | Bet:${bet} | Dealer x${dealerMultiplier} | Player pays:${totalStake}`
+      );
+
+      results.push({
+        username: p.username,
+        delta: -totalStake,
+        balance: p.balance,
+        multiplier: dealerMultiplier,
+        isDealer: false
+      });
     }
-  
-    dealerDelta += totalStake;
-  
-    console.log(
-      `❌ LOSE → ${p.username} | Bet:${bet} | Dealer x${dealerMultiplier} | Player pays:${totalStake}`
-    );
-  }
-  
-
-    results.push({
-      username: p.username,
-      delta: delta,
-      balance: p.balance,
-      multiplier: multiplier,
-      isDealer: false
-    });
   });
 
   // ===== FINAL BANKER SETTLEMENT =====
 
-  // Apply profit / loss to dealer real balance
   dealer.balance += dealerDelta;
 
-  // Safety init
   if (typeof table.bankerPot !== "number") {
     table.bankerPot = 0;
   }
 
-  // Update session banker pot
   table.bankerPot += dealerDelta;
   if (table.bankerPot < 0) table.bankerPot = 0;
 
-  // Reset locked fund for next round
   dealer.bankerFund = 0;
 
   results.push({
@@ -117,7 +123,7 @@ function payoutWinners(table, players, winners) {
     delta: dealerDelta,
     balance: dealer.balance,
     bankerPot: table.bankerPot,
-    multiplier: 1,
+    multiplier: dealer.multiplier || 1,
     isDealer: true
   });
 

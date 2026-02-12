@@ -16,6 +16,11 @@ function autoStart(table) {
   });
 
   if (!table || table.players.length === 0) return;
+  // 🔥 ADD THIS BLOCK HERE
+  if (table.countdownInterval) {
+    console.log("⛔ autoStart blocked — countdown already running");
+    return;
+  }
   if (table.roundInProgress || table.betInterval) return;
 
   const realPlayers = table.players.filter(p => !p.isAi);

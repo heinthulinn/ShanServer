@@ -128,7 +128,10 @@ function scheduleNextRound(tableId) {
       resetPlayersForNextRound(table);
       table.gameInProgress = table.roundInProgress = table.watchTimerStarted = table.dealAckReceived = table.waitingForNextRound = table.autoStartCalled = false;
       table.players.forEach(p => p.ready = true);
-      gameFlow.autoStart(table);
+      if (!table.countdownInterval && !table.betInterval && !table.roundInProgress) {
+        gameFlow.autoStart(table);
+    }
+    
     }, 3000);
 }
     

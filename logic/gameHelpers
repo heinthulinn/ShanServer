@@ -4,6 +4,7 @@
 const { evaluateHand, compareHands } = require("./shanRules");// new
 const { createDeck, shuffle } = require("./dealCards");
 function formatCardsForUnity(cards) {
+    if (!cards || !Array.isArray(cards)) return []; // 🔥 Add this safety line
     const suitMap = { 4: "S", 3: "H", 2: "D", 1: "C" };
     return cards.map(c => `${c.rank}${suitMap[c.suit]}`);
 }
@@ -40,6 +41,7 @@ function calculateShanResult(cards) {
  * In Shan, points come first, then Power Score (10 > J > Q > K > A), then Suit.
  */
 function unityRank(player) {
+    if (!player.cards || player.cards.length < 2) return 0; // 🔥 Safety check
     const hand = evaluateHand(player.cards);
     // We create a sortable score: (Points * 100) + (Power Score * 10) + SuitValue
     // This allows a simple numeric comparison.
@@ -84,7 +86,7 @@ function forceWinningHand(minPoints) {
  */
 function decideDealerWinners(players) {
     const dealer = players.find(p => p.isDealer);
-    if (!dealer) return [];
+    if (!dealer || !dealer.cards || dealer.cards.length === 0) return []; // Safety check
 
     const dealerHand = evaluateHand(dealer.cards);
     const winners = [];
@@ -92,18 +94,17 @@ function decideDealerWinners(players) {
     console.log(`DEALER Hand: ${dealerHand.points} points | Do: ${dealerHand.isDo} | Multiplier: x${dealerHand.multiplier}`);
 
     players.forEach(p => {
-        if (p.isDealer) return;
+        if (p.isDealer || !p.cards || p.cards.length === 0) return; // Skip invalid hands
 
         const pHand = evaluateHand(p.cards);
-        
         // Use the compareHands logic: 1 means player wins, -1 means dealer wins
         const result = compareHands(pHand, dealerHand);
 
         if (result === 1) {
             winners.push(p);
-            console.log(`PLAYER ${p.name} WINS with ${pHand.points} pts (x${pHand.multiplier})`);
+            console.log(`PLAYER ${p.username} WINS with ${pHand.points} pts (x${pHand.multiplier})`);
         } else {
-            console.log(`PLAYER ${p.name} LOSES to dealer`);
+            console.log(`PLAYER ${p.username} LOSES to dealer`);
         }
     });
 
@@ -117,7 +118,7 @@ function buildTableResult(table) {
         pot: table.players.reduce((sum, p) => sum + (p.currentBet || 0), 0),
         dealer: table.players.find(p => p.isDealer)?.username,
         players: table.players.map(p => {
-            const hand = evaluateHand(p.cards);
+            const hand = (p.cards && p.cards.length >= 2) ? evaluateHand(p.cards) : { points: 0, isDo: false, multiplier: 1 };
             return {
                 name: p.username,
                 isAi: p.isAi,
@@ -141,4 +142,4 @@ module.exports = {
     decideDealerWinners,
     calculateShanResult,
     buildTableResult 
-};
+}; 

@@ -561,6 +561,14 @@ function executeDealerAction(tableId, roundId, action,seatId = null) {
 
 function startFindWinnerPhase(tableId, roundId) {
     const table = tables[tableId];
+    if (!table || table.findWinnerStarted) return; // 🛑 STOP DOUBLE TRIGGER
+    table.findWinnerStarted = true; 
+
+    // Kill the dealer's choice timer immediately so it doesn't timeout later
+    if (table.dealerActionTimer) {
+        clearInterval(table.dealerActionTimer);
+        table.dealerActionTimer = null;
+    }
     let findWinnerTime = 5;
     broadcastToTable(tableId, { type: "game:findwinner:start", seconds: findWinnerTime, roundId });
 
@@ -569,6 +577,8 @@ function startFindWinnerPhase(tableId, roundId) {
 
         if (findWinnerTime <= 0) {
             clearInterval(table.findWinnerTimer);
+            table.findWinnerTimer = null;
+            table.findWinnerStarted = false; // Reset for next round logic
             const activePlayers = table.players.filter(p => !p.waiting);
             // LOG DEALER FINAL STATE
             const dealer = activePlayers.find(p => p.isDealer);
@@ -607,10 +617,13 @@ function startFindWinnerPhase(tableId, roundId) {
 
 function startPayoutPhase(tableId, roundId) {
     const table = tables[tableId];
-    let payoutTime = 5;
+    if (!table || table.payoutStarted) return; // 🛑 STOP DOUBLE PAYOUT
+    table.payoutStarted = true;
+
     const payoutResults = payoutWinners(table,table.players, table.currentWinners);
-    
+    broadcastToTable(tableId, { type: "game:payout:result", roundId, results: payoutResults });
     // LOG DETAILED MONEY FLOW
+    let payoutTime = 5;
     payoutResults.forEach(res => {
         const p = table.players.find(player => player.username === res.username);
         if (p && !p.isDealer) {

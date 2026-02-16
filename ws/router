@@ -5,7 +5,7 @@ const { tables } = require("../state/tables");
 const { validUsers, aiPlayersList } = require("../state/users");
 
 const { assignBaseAiFirst } = require("../logic/tableHelpers");
-const { playerReady, handleGameResult,handlePlayerBet,handleDealFinished,scheduleNextRound,handlePlayerDrawRequest } = require("../logic/gameHandlers");
+const { playerReady, handleGameResult,handlePlayerBet,handleDealFinished,scheduleNextRound,handlePlayerDrawRequest,handleDealerDecision } = require("../logic/gameHandlers");
 const gameFlow = require("../logic/gameFlow");
 const { joinTable } = require("../logic/tableJoin");
 const { handleSocialGift } = require("../social/giftHandler");
@@ -62,7 +62,10 @@ function handleWsMessage(ws, raw) {
       
     case "game:player:draw:request":
       return handlePlayerDrawRequest(ws, data);
-
+    // 🔥 ADD THIS CASE HERE
+    case "game:dealer:decision":
+      return handleDealerDecision(ws, data);
+      
     case "game:result":
       return handleGameResult(ws, data);
 

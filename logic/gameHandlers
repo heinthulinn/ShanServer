@@ -643,5 +643,6 @@ module.exports = {
     scheduleNextRound, 
     handlePlayerBet, 
     handleDealFinished, 
-    handlePlayerDrawRequest 
+    handlePlayerDrawRequest,
+    handleDealerDecision
 };

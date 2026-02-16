@@ -348,7 +348,7 @@ function startSecondWatchPhase(tableId, roundId) {
 }
 
 function handleDealerDecision(ws, data) {
-    const { tableId, action } = data;
+    const { tableId, action, seatId } = data;
     const table = tables[tableId];
     if (!table) return;
 
@@ -365,7 +365,7 @@ function handleDealerDecision(ws, data) {
 
     // 🔥 IMPORTANT: DO NOT DRAW HERE
     // Forward everything to ONE execution path
-    executeDealerAction(tableId, table.roundId, action);
+    executeDealerAction(tableId, table.roundId, action,seatId);
 }
 
 
@@ -445,7 +445,7 @@ function runAIDealerAction(tableId, roundId) {
 }
 
 
-function executeDealerAction(tableId, roundId, action) {
+function executeDealerAction(tableId, roundId, action,seatId = null) {
     const table = tables[tableId];
     const dealer = table.players.find(p => p.isDealer);
     if (!dealer) return;
@@ -461,6 +461,39 @@ function executeDealerAction(tableId, roundId, action) {
 
     switch (action) {
 
+        case "catchsingle": {
+
+            if (seatId === null) {
+                console.log("❌ catchsingle failed: no seatId");
+                break;
+            }
+        
+            const target = table.players.find(p => p.seatId == seatId);
+        
+            if (!target) {
+                console.log("❌ catchsingle failed: invalid seatId");
+                break;
+            }
+        
+            if (!target.cards || target.cards.length === 0) {
+                console.log("❌ catchsingle failed: no cards");
+                break;
+            }
+        
+            console.log(`👑🎯 [DEALER CATCH SINGLE] Seat:${seatId} | ${target.username}`);
+        
+            broadcastToTable(tableId, {
+                type: "game:dealer:catchsingle",
+                player: {
+                    username: target.username,
+                    seatId: target.seatId,
+                    cards: target.cards
+                },
+                roundId
+            });
+        
+            break;
+        }
         case "catch3cards": {
             const players = table.players
                 .filter(p => p.cards && p.cards.length === 3)

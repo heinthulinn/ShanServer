@@ -1,5 +1,5 @@
 // ===== payout.js =====
-
+const gameHelpers = require("./gameHelpers"); // <--- ADD THIS LINE AT THE TOP
 /**
  * Collects bets from players at the start of the round.
  * Banker (Dealer) is excluded from paying a bet.
@@ -79,7 +79,7 @@ function payoutWinners(table, players, winners) {
 
     } else {
       // ❌ PLAYER LOSES → dealer collects using DEALER multiplier
-      const dRes = gameHelpers.calculateShanResult(dealer.cards); // Get fresh calculation
+      const res = gameHelpers.calculateShanResult(p.cards); // Get fresh calculation
       const dealerMultiplier = dealer.multiplier || 1;
       totalStake = bet * dealerMultiplier;
 

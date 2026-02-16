@@ -589,8 +589,8 @@ function startFindWinnerPhase(tableId, roundId) {
             const dRes = gameHelpers.calculateShanResult(dealer.cards);
             console.log(`DEALER Hand: ${dRes.points} points | Multiplier: x${dRes.payoutMultiplier}`);
 
-            const winnerPlayers = gameHelpers.decideDealerWinners(activePlayers);
-            table.currentWinners = winnerPlayers.map(p => p.username || p.name);
+            const winnerUsernames = gameHelpers.decideDealerWinners(activePlayers);
+            table.currentWinners = winnerUsernames;
 
             const tableResult = gameHelpers.buildTableResult(table);
             // 3️⃣ 🔥 BROADCAST FULL RESULT (THIS WAS MISSING)

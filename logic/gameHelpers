@@ -101,7 +101,7 @@ function decideDealerWinners(players) {
         const result = compareHands(pHand, dealerHand);
 
         if (result === 1) {
-            winners.push(p);
+            winners.push(p.username);
             console.log(`PLAYER ${p.username} WINS with ${pHand.points} pts (x${pHand.multiplier})`);
         } else {
             console.log(`PLAYER ${p.username} LOSES to dealer`);

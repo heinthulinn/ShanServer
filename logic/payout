@@ -54,6 +54,7 @@ function payoutWinners(table, players, winners) {
 
     if (winnerNames.has(p.username)) {
       // ✅ PLAYER WINS → dealer pays using PLAYER multiplier
+      const res = gameHelpers.calculateShanResult(p.cards); // Get fresh calculation
       const playerMultiplier = p.multiplier || 1;
       totalStake = bet * playerMultiplier;
 
@@ -78,6 +79,7 @@ function payoutWinners(table, players, winners) {
 
     } else {
       // ❌ PLAYER LOSES → dealer collects using DEALER multiplier
+      const dRes = gameHelpers.calculateShanResult(dealer.cards); // Get fresh calculation
       const dealerMultiplier = dealer.multiplier || 1;
       totalStake = bet * dealerMultiplier;
 

@@ -4,11 +4,12 @@ const { tables } = require("../state/tables");
 const { wsSend, broadcastToTable } = require("../ws/sender");
 const { resetPlayersForNextRound, resetTableState } = require("./roundReset");
 const gameFlow = require("./gameFlow");
-const { payoutWinners } = require("./payout");
+//const { payoutWinners } = require("./payout");
 const gameHelpers = require("./gameHelpers");
 const dealerPhase = require("./dealerPhase");
 const watchPhase = require("./watchPhase");
-const drawPhase = require("./drawPhase");
+//const drawPhase = require("./drawPhase");
+const resultPhase = require("./resultPhase");
 
 
 function playerReady(ws, data) {
@@ -157,7 +158,17 @@ function handleDealFinished(ws, data) {
 
     setTimeout(() => {
         watchPhase.startWatchTwoCardPhase(tableId, roundId, () => {
-            drawPhase.processFinalDraws(tableId, roundId,startFindWinnerPhase);
+            drawPhase.processFinalDraws(
+                tableId, 
+                roundId,
+                (tableId, roundId) => {
+                    resultPhase.startFindWinnerPhase(
+                        tableId,
+                        roundId,
+                        scheduleNextRound
+                    );
+                }
+            );            
         });
     }, 500);    
     return; 
@@ -183,7 +194,17 @@ function handleDealFinished(ws, data) {
                     roundId
                 });
         
-                drawPhase.processFinalDraws(tableId, roundId,startFindWinnerPhase);
+                drawPhase.processFinalDraws(
+                    tableId, 
+                    roundId,
+                    (tableId, roundId) => {
+                        resultPhase.startFindWinnerPhase(
+                            tableId,
+                            roundId,
+                            scheduleNextRound
+                        );
+                    }
+                );                
             } else {
                 broadcastToTable(tableId, {
                     type: "game:watch2card:tick",
@@ -196,83 +217,6 @@ function handleDealFinished(ws, data) {
     }, 500); 
 }
 
-function startFindWinnerPhase(tableId, roundId) {
-    const table = tables[tableId];
-    let findWinnerTime = 5;
-    broadcastToTable(tableId, { type: "game:findwinner:start", seconds: findWinnerTime, roundId });
-
-    table.findWinnerTimer = setInterval(() => {
-        findWinnerTime--;
-
-        if (findWinnerTime <= 0) {
-            clearInterval(table.findWinnerTimer);
-            const activePlayers = table.players.filter(p => !p.waiting);
-            // LOG DEALER FINAL STATE
-            const dealer = activePlayers.find(p => p.isDealer);
-            if (!dealer) {
-                console.error("❌ Dealer not found at findWinner phase");
-                return;
-            }
-            const dRes = gameHelpers.calculateShanResult(dealer.cards);
-            console.log(`DEALER Hand: ${dRes.points} points | Multiplier: x${dRes.payoutMultiplier}`);
-
-            const winnerPlayers = gameHelpers.decideDealerWinners(activePlayers);
-            table.currentWinners = winnerPlayers.map(p => p.username || p.name);
-
-            const tableResult = gameHelpers.buildTableResult(table);
-            // 3️⃣ 🔥 BROADCAST FULL RESULT (THIS WAS MISSING)
-            broadcastToTable(tableId, {
-                type: "game:round:result",
-                ...tableResult
-            });
-
-            // LOG INDIVIDUAL PLAYER RESULTS
-            activePlayers.forEach(p => {
-                if (p.isDealer) return;
-                const res = gameHelpers.calculateShanResult(p.cards);
-                const isWinner = table.currentWinners.includes(p.username);
-                console.log(`PLAYER ${p.username} ${isWinner ? "WINS" : "LOSES"} with ${res.points} pts (x${res.multiplier || 1})`);
-            });
-            
-
-            startPayoutPhase(tableId, roundId);
-        } else {
-            broadcastToTable(tableId, { type: "game:findwinner:tick", seconds: findWinnerTime, roundId });
-        }
-    }, 1000);
-}
-
-function startPayoutPhase(tableId, roundId) {
-    const table = tables[tableId];
-    let payoutTime = 5;
-    const payoutResults = payoutWinners(table,table.players, table.currentWinners);
-    
-    // LOG DETAILED MONEY FLOW
-    payoutResults.forEach(res => {
-        const p = table.players.find(player => player.username === res.username);
-        if (p && !p.isDealer) {
-            const isWin = table.currentWinners.includes(p.username);
-            if (isWin) {
-                console.log(`💵 WIN → ${p.username} | Bet:${p.currentBet} | x${p.multiplier || 1} | Dealer pays:${res.delta}`);
-            }
-        }
-    });
-
-    broadcastToTable(tableId, { type: "game:payout:result", roundId, results: payoutResults });
-
-    table.payoutTimer = setInterval(() => {
-        payoutTime--;
-        if (payoutTime <= 0) {
-            clearInterval(table.payoutTimer);
-            // 🔥 ADD THIS LINE RIGHT HERE! 
-            // Without this, ShanPhaseHandler.cs NEVER gets the signal to clean the UI.
-            broadcastToTable(tableId, { type: "game:payout:end", roundId: roundId });
-            scheduleNextRound(tableId);
-        } else {
-            broadcastToTable(tableId, { type: "game:payout:tick", seconds: payoutTime, roundId });
-        }
-    }, 1000);
-}
 
 module.exports = { 
     playerReady, 

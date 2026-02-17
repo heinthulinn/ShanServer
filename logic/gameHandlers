@@ -144,58 +144,76 @@ function handleDealFinished(ws, data) {
     const { tableId, roundId } = data;
     const table = tables[tableId];
     if (!table || roundId !== table.roundId || table.dealAckReceived) return;
+
     table.dealAckReceived = true;
 
     const dealer = table.players.find(p => p.isDealer);
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
 
-   // If dealer has 8 or 9, we still show cards but skip the drawing phase
-   if (dealerRes.points >= 8) {
-    broadcastToTable(tableId, { type: "game:dealer:natural", points: dealerRes.points });
-    
-    // 1. Let players see their own cards first
-    broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+    // ===============================
+    // 🔥 DEALER NATURAL (8 or 9)
+    // ===============================
+    if (dealerRes.points >= 8) {
 
-    setTimeout(() => {
-        watchPhase.startWatchTwoCardPhase(tableId, roundId, () => {
-            drawPhase.processFinalDraws(
-                tableId, 
-                roundId,
-                (tableId, roundId) => {
-                    resultPhase.startFindWinnerPhase(
-                        tableId,
-                        roundId,
-                        scheduleNextRound
-                    );
-                }
-            );            
+        broadcastToTable(tableId, { 
+            type: "game:dealer:natural", 
+            points: dealerRes.points 
         });
-    }, 500);    
-    return; 
-}
-    // --- NORMAL FLOW (Dealer < 8) ---
-    setTimeout(() => {
-        broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
-        let remainingWatch = 7;
-        broadcastToTable(tableId, { type: "game:watch2card:start", seconds: remainingWatch, roundId });
 
-        table.watchTimer = setInterval(() => {
-            remainingWatch--;
-            if (remainingWatch <= 0) {
-                clearInterval(table.watchTimer);
-        
-                broadcastToTable(tableId, {
-                    type: "game:watch2card:end",
-                    roundId
-                });
-        
-                broadcastToTable(tableId, {
-                    type: "ui:cardview:hide",
-                    roundId
-                });
-        
+        // Show peek UI first
+        broadcastToTable(tableId, { 
+            type: "ui:cardview:show", 
+            roundId 
+        });
+
+        setTimeout(() => {
+
+            // Reveal all table cards
+            broadcastToTable(tableId, { 
+                type: "table:cards:reveal",
+                players: table.players.map(p => ({
+                    username: p.username,
+                    seatId: p.seatId,
+                    cards: p.cards
+                }))
+            });
+
+            // Hide peek UI
+            broadcastToTable(tableId, { 
+                type: "ui:cardview:hide", 
+                roundId 
+            });
+
+            // Directly go to result phase (NO WATCH, NO DRAW)
+            setTimeout(() => {
+                resultPhase.startFindWinnerPhase(
+                    tableId,
+                    roundId,
+                    scheduleNextRound
+                );
+            }, 2000);
+
+        }, 500);
+
+        return;
+    }
+
+    // =====================================
+    // 🔵 NORMAL FLOW (Dealer < 8)
+    // =====================================
+    setTimeout(() => {
+
+        broadcastToTable(tableId, { 
+            type: "ui:cardview:show", 
+            roundId 
+        });
+
+        watchPhase.startWatchTwoCardPhase(
+            tableId,
+            roundId,
+            () => {
                 drawPhase.processFinalDraws(
-                    tableId, 
+                    tableId,
                     roundId,
                     (tableId, roundId) => {
                         resultPhase.startFindWinnerPhase(
@@ -204,19 +222,12 @@ function handleDealFinished(ws, data) {
                             scheduleNextRound
                         );
                     }
-                );                
-            } else {
-                broadcastToTable(tableId, {
-                    type: "game:watch2card:tick",
-                    seconds: remainingWatch,
-                    roundId
-                });
+                );
             }
-        }, 1000);
-        
-    }, 500); 
-}
+        );
 
+    }, 500);
+}
 
 module.exports = { 
     playerReady, 

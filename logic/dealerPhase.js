@@ -101,48 +101,103 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase,targ
     {
         case "catch":
 
-        if (!targetSeatId) break;
-
-            const targetPlayer = table.players.find(p => p.seatId === targetSeatId);
-            if (!targetPlayer) break;
-            broadcastToTable(tableId, {
-            type: "game:dealer:catch",
-            player: {
-                username: targetPlayer.username,
+        if (!targetSeatId) return;
+    
+        const targetPlayer = table.players.find(p => p.seatId === targetSeatId);
+        if (!targetPlayer) return;
+    
+        // 1️⃣ Show Dealer Catch UI
+        broadcastToTable(tableId, {
+            type: "ui:dealercatchcardview:show",
+            dealer: {
+                seatId: dealer.seatId,
+                cards: dealer.cards
+            },
+            targetPlayer: {
                 seatId: targetPlayer.seatId,
                 cards: targetPlayer.cards
             },
+            roundId
+        });
+    
+        // 2️⃣ Wait 5 seconds
+        setTimeout(() => {
+    
+            // Hide UI
+            broadcastToTable(tableId, {
+                type: "ui:dealercatchcardview:hide",
                 roundId
             });
-
-            break;
+    
+            // Continue game
+            startFindWinnerPhase(tableId, roundId);
+    
+        }, 5000);
+    
+        return;
+    
 
 
         case "catch3cards":
+
+        const threeCardPlayers = table.players
+            .filter(p => p.cards && p.cards.length === 3);
+    
+        broadcastToTable(tableId, {
+            type: "ui:dealercatchcardview:show",
+            dealer: {
+                seatId: dealer.seatId,
+                cards: dealer.cards
+            },
+            players: threeCardPlayers.map(p => ({
+                seatId: p.seatId,
+                cards: p.cards
+            })),
+            roundId
+        });
+    
+        setTimeout(() => {
+    
             broadcastToTable(tableId, {
-                type: "game:dealer:catch3cards",
-                players: table.players
-                    .filter(p => p.cards && p.cards.length === 3)
-                    .map(p => ({
-                        username: p.username,
-                        seatId: p.seatId,
-                        cards: p.cards
-                    })),
+                type: "ui:dealercatchcardview:hide",
                 roundId
             });
-            break;
+    
+            startFindWinnerPhase(tableId, roundId);
+    
+        }, 5000);
+    
+        return;
+    
 
         case "catchall":
-            broadcastToTable(tableId, {
-                type: "game:dealer:catchall",
-                players: table.players.map(p => ({
-                    username: p.username,
-                    seatId: p.seatId,
-                    cards: p.cards
-                })),
-                roundId
-            });
-            break;
+
+    broadcastToTable(tableId, {
+        type: "ui:dealercatchcardview:show",
+        dealer: {
+            seatId: dealer.seatId,
+            cards: dealer.cards
+        },
+        players: table.players.map(p => ({
+            seatId: p.seatId,
+            cards: p.cards
+        })),
+        roundId
+    });
+
+    setTimeout(() => {
+
+        broadcastToTable(tableId, {
+            type: "ui:dealercatchcardview:hide",
+            roundId
+        });
+
+        startFindWinnerPhase(tableId, roundId);
+
+    }, 5000);
+
+    return;
+
 
         case "draw":
             if (!dealer.hasDrawn && dealer.cards.length === 2) {

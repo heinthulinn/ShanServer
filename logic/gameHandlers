@@ -193,7 +193,7 @@ function handleDealFinished(ws, data) {
                 );
             }, 2000);
 
-        }, 500);
+        }, 1500);
 
         return;
     }

@@ -50,41 +50,48 @@ function startWatchThreeCardPhase(tableId, roundId, onComplete) {
     if (!table) return;
 
     let secondWatchTime = 7;
-      // 🔥 ADD THIS
-    broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
-    broadcastToTable(tableId, {
-        type: "game:watch3card:start",
-        seconds: secondWatchTime,
-        roundId
-    });
 
-    const timer = setInterval(() => {
-        secondWatchTime--;
+    // 🔥 ADD DELAY BEFORE SHOWING CARD VIEW
+    setTimeout(() => {
 
-        if (secondWatchTime <= 0) {
-            clearInterval(timer);
+        broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
 
-            broadcastToTable(tableId, {
-                type: "game:watch3card:end",
-                roundId
-            });
+        broadcastToTable(tableId, {
+            type: "game:watch3card:start",
+            seconds: secondWatchTime,
+            roundId
+        });
 
-            broadcastToTable(tableId, {
-                type: "ui:cardview:hide",
-                roundId
-            });
+        const timer = setInterval(() => {
+            secondWatchTime--;
 
-            if (onComplete) onComplete();
+            if (secondWatchTime <= 0) {
+                clearInterval(timer);
 
-        } else {
-            broadcastToTable(tableId, {
-                type: "game:watch3card:tick",
-                seconds: secondWatchTime,
-                roundId
-            });
-        }
-    }, 1000);
+                broadcastToTable(tableId, {
+                    type: "game:watch3card:end",
+                    roundId
+                });
+
+                broadcastToTable(tableId, {
+                    type: "ui:cardview:hide",
+                    roundId
+                });
+
+                if (onComplete) onComplete();
+
+            } else {
+                broadcastToTable(tableId, {
+                    type: "game:watch3card:tick",
+                    seconds: secondWatchTime,
+                    roundId
+                });
+            }
+        }, 1000);
+
+    }, 1500); // 👈 change delay here if you want
 }
+
 
 module.exports = {
     startWatchTwoCardPhase,

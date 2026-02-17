@@ -51,10 +51,18 @@ function startWatchThreeCardPhase(tableId, roundId, onComplete) {
 
     let secondWatchTime = 7;
 
-    // 🔥 ADD DELAY BEFORE SHOWING CARD VIEW
+    // 🔥 DELAY BEFORE SHOWING CARD VIEW
     setTimeout(() => {
 
-        broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
+        // 🔥 SHOW CARD VIEW ONLY TO PLAYERS WITH 3 CARDS
+        table.players.forEach(p => {
+            if (p.cards && p.cards.length === 3 && p.ws) {
+                p.ws.send(JSON.stringify({
+                    type: "ui:cardview:show",
+                    roundId
+                }));
+            }
+        });
 
         broadcastToTable(tableId, {
             type: "game:watch3card:start",
@@ -73,9 +81,14 @@ function startWatchThreeCardPhase(tableId, roundId, onComplete) {
                     roundId
                 });
 
-                broadcastToTable(tableId, {
-                    type: "ui:cardview:hide",
-                    roundId
+                // 🔥 HIDE CARD VIEW ONLY FOR 3 CARD PLAYERS
+                table.players.forEach(p => {
+                    if (p.cards && p.cards.length === 3 && p.ws) {
+                        p.ws.send(JSON.stringify({
+                            type: "ui:cardview:hide",
+                            roundId
+                        }));
+                    }
                 });
 
                 if (onComplete) onComplete();
@@ -89,8 +102,9 @@ function startWatchThreeCardPhase(tableId, roundId, onComplete) {
             }
         }, 1000);
 
-    }, 1500); // 👈 change delay here if you want
+    }, 1500);
 }
+
 
 
 module.exports = {

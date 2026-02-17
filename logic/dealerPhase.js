@@ -53,7 +53,7 @@ function startDealerActionPhase(tableId, roundId, startFindWinnerPhase) {
 }
 
 function handleDealerDecision(ws, data, startFindWinnerPhase) {
-    const { tableId, action } = data;
+    const { tableId, action,targetSeatId} = data;
     const table = tables[tableId];
     if (!table) return;
 
@@ -63,7 +63,7 @@ function handleDealerDecision(ws, data, startFindWinnerPhase) {
     }
 
     console.log(`👑 [DEALER ACTION RECEIVED] ${action}`);
-    executeDealerAction(tableId, table.roundId, action, startFindWinnerPhase);
+    executeDealerAction(tableId, table.roundId, action, startFindWinnerPhase,targetSeatId);
 }
 
 function runAIDealerAction(tableId, roundId, startFindWinnerPhase) {
@@ -87,7 +87,8 @@ function runAIDealerAction(tableId, roundId, startFindWinnerPhase) {
     executeDealerAction(tableId, roundId, action, startFindWinnerPhase);
 }
 
-function executeDealerAction(tableId, roundId, action, startFindWinnerPhase) {
+function executeDealerAction(tableId, roundId, action, startFindWinnerPhase,targetSeatId) 
+{
     const table = tables[tableId];
     const dealer = table.players.find(p => p.isDealer);
     if (!dealer) return;
@@ -96,7 +97,26 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase) {
 
     console.log(`👑 [DEALER ACTION EXECUTE] ${action}`);
 
-    switch (action) {
+    switch (action) 
+    {
+        case "catch":
+
+        if (!targetSeatId) break;
+
+            const targetPlayer = table.players.find(p => p.seatId === targetSeatId);
+            if (!targetPlayer) break;
+            broadcastToTable(tableId, {
+            type: "game:dealer:catch",
+            player: {
+                username: targetPlayer.username,
+                seatId: targetPlayer.seatId,
+                cards: targetPlayer.cards
+            },
+                roundId
+            });
+
+            break;
+
 
         case "catch3cards":
             broadcastToTable(tableId, {

@@ -6,6 +6,8 @@ const { resetPlayersForNextRound, resetTableState } = require("./roundReset");
 const gameFlow = require("./gameFlow");
 const { payoutWinners } = require("./payout");
 const gameHelpers = require("./gameHelpers");
+const dealerPhase = require("./dealerPhase");
+
 
 function playerReady(ws, data) {
     const table = tables[data.tableId];
@@ -334,7 +336,7 @@ function startSecondWatchPhase(tableId, roundId) {
                     roundId
                 });
         
-                startDealerActionPhase(tableId, roundId);
+                dealerPhase.startDealerActionPhase(tableId, roundId,startFindWinnerPhase);
             } else {
                 broadcastToTable(tableId, {
                     type: "game:watch3card:tick",
@@ -345,185 +347,6 @@ function startSecondWatchPhase(tableId, roundId) {
         }, 1000);
         
     }, 1500); 
-}
-
-function handleDealerDecision(ws, data) {
-    const { tableId, action } = data;
-    const table = tables[tableId];
-    if (!table) return;
-
-    const dealer = table.players.find(p => p.isDealer);
-    if (!dealer) return;
-
-    // Stop dealer timer if running
-    if (table.dealerActionTimer) {
-        clearInterval(table.dealerActionTimer);
-        table.dealerActionTimer = null;
-    }
-
-    console.log(`👑 [DEALER ACTION RECEIVED] ${action}`);
-
-    // 🔥 IMPORTANT: DO NOT DRAW HERE
-    // Forward everything to ONE execution path
-    executeDealerAction(tableId, table.roundId, action);
-}
-
-
-function startDealerActionPhase(tableId, roundId) {
-    const table = tables[tableId];
-    const dealer = table.players.find(p => p.isDealer);
-
-    console.log(`👑 [DEALER ACTION START] Table:${tableId} | Round:${roundId}`);
-
-    const threeCardPlayers = table.players
-        .filter(p => p.cards && p.cards.length === 3)
-        .sort((a, b) => a.seatId - b.seatId);
-
-    console.log(
-        `🎯 [3CARD PLAYERS]`,
-        threeCardPlayers.map(p => `${p.username}(seat:${p.seatId})`)
-    );
-
-    broadcastToTable(tableId, {
-        type: "game:dealer:action:start",
-        roundId,
-        seconds: 10,
-        threeCardPlayers: threeCardPlayers.map(p => ({
-            username: p.username,
-            seatId: p.seatId
-        }))
-    });
-
-    // 🤖 AI DEALER AUTO ACTION
-    if (dealer.isAi) {
-        setTimeout(() => {
-            runAIDealerAction(tableId, roundId);
-        }, 1500);
-        return;
-    }
-
-    // 👤 HUMAN DEALER TIMER
-    let timeLeft = 10;
-    table.dealerActionTimer = setInterval(() => {
-        timeLeft--;
-
-        if (timeLeft <= 0) {
-            clearInterval(table.dealerActionTimer);
-            table.dealerActionTimer = null;
-
-            console.log(`⏱️ [DEALER TIMEOUT] AUTO SKIP`);
-            executeDealerAction(tableId, roundId, "skip");
-        } else {
-            broadcastToTable(tableId, {
-                type: "game:dealer:action:tick",
-                seconds: timeLeft,
-                roundId
-            });
-        }
-    }, 1000);
-}
-
-function runAIDealerAction(tableId, roundId) {
-    const table = tables[tableId];
-    const dealer = table.players.find(p => p.isDealer);
-    const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
-
-    const threeCardPlayers = table.players.filter(p => p.cards.length === 3);
-
-    let action = "skip";
-
-    if (dealerRes.points < 4 && dealer.cards.length === 2) {
-        action = "draw";
-    } else if (threeCardPlayers.length > 0) {
-        action = "catch3cards";
-    } else {
-        action = "catchall";
-    }
-
-    console.log(`🤖👑 [AI DEALER ACTION] ${action}`);
-    executeDealerAction(tableId, roundId, action);
-}
-
-
-function executeDealerAction(tableId, roundId, action) {
-    const table = tables[tableId];
-    const dealer = table.players.find(p => p.isDealer);
-    if (!dealer) return;
-
-    if (dealer.hasDrawn === undefined) dealer.hasDrawn = false;
-
-    if (table.dealerActionTimer) {
-        clearInterval(table.dealerActionTimer);
-        table.dealerActionTimer = null;
-    }
-
-    console.log(`👑 [DEALER ACTION EXECUTE] ${action}`);
-
-    switch (action) {
-
-        case "catch3cards": {
-            const players = table.players
-                .filter(p => p.cards && p.cards.length === 3)
-                .sort((a, b) => a.seatId - b.seatId);
-
-            broadcastToTable(tableId, {
-                type: "game:dealer:catch3cards",
-                players: players.map(p => ({
-                    username: p.username,
-                    seatId: p.seatId,
-                    cards: p.cards
-                })),
-                roundId
-            });
-            break;
-        }
-
-        case "catchall": {
-            broadcastToTable(tableId, {
-                type: "game:dealer:catchall",
-                players: table.players.map(p => ({
-                    username: p.username,
-                    seatId: p.seatId,
-                    cards: p.cards
-                })),
-                roundId
-            });
-            break;
-        }
-
-        case "draw": {
-            if (dealer.hasDrawn) {
-                console.log(`❌ [DEALER DRAW BLOCKED] Already drew`);
-                break;
-            }
-
-            if (dealer.cards.length === 2) {
-                dealer.hasDrawn = true; // 🔥 IMPORTANT FIX
-
-                const card = table.deck[table.deckIndex++];
-                dealer.cards.push(card);
-
-                const cardName = `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`;
-                console.log(`👑✅ [DEALER DRAW] Card:${cardName}`);
-
-                broadcastToTable(tableId, {
-                    type: "game:dealer:draw",
-                    card: cardName,
-                    roundId
-                });
-            }
-            break;
-        }
-
-        case "skip":
-        default:
-            console.log(`👑❌ [DEALER SKIP]`);
-            break;
-    }
-
-    setTimeout(() => {
-        startFindWinnerPhase(tableId, roundId);
-    }, 1500);
 }
 
 function startFindWinnerPhase(tableId, roundId) {

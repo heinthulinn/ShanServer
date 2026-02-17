@@ -8,7 +8,7 @@ const { payoutWinners } = require("./payout");
 const gameHelpers = require("./gameHelpers");
 const dealerPhase = require("./dealerPhase");
 const watchPhase = require("./watchPhase");
-
+const drawPhase = require("./drawPhase");
 
 
 function playerReady(ws, data) {
@@ -157,7 +157,7 @@ function handleDealFinished(ws, data) {
 
     setTimeout(() => {
         watchPhase.startWatchTwoCardPhase(tableId, roundId, () => {
-            processFinalDraws(tableId, roundId);
+            drawPhase.processFinalDraws(tableId, roundId,startFindWinnerPhase);
         });
     }, 500);    
     return; 
@@ -183,7 +183,7 @@ function handleDealFinished(ws, data) {
                     roundId
                 });
         
-                processFinalDraws(tableId, roundId);
+                drawPhase.processFinalDraws(tableId, roundId,startFindWinnerPhase);
             } else {
                 broadcastToTable(tableId, {
                     type: "game:watch2card:tick",
@@ -195,87 +195,6 @@ function handleDealFinished(ws, data) {
         
     }, 500); 
 }
-
-function processFinalDraws(tableId, roundId) {
-    const table = tables[tableId];
-    let anyoneDrew = false;
-
-    console.log(`--- [DRAW PHASE START] Table: ${tableId} ---`);
-
-    // ===============================
-    // 👑 DEALER AUTO DRAW (🔥 FIX)
-    // ===============================
-    const dealer = table.players.find(p => p.isDealer);
-    if (dealer) {
-        const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
-
-        console.log(`👑 [DEALER CHECK] Points: ${dealerRes.points} | Cards: ${dealer.cards.length}`);
-
-        if (
-            dealer.cards.length === 2 &&
-            dealerRes.points < 4 &&
-            !dealer.hasDrawn
-        ) {
-            const card = table.deck[table.deckIndex++];
-            dealer.cards.push(card);
-            dealer.hasDrawn = true;
-            anyoneDrew = true;
-
-            const cardName = `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`;
-            console.log(`👑✅ [DEALER AUTO DRAW] Card: ${cardName}`);
-
-            broadcastToTable(tableId, {
-                type: "game:dealer:auto_draw",
-                card: cardName,
-                roundId
-            });
-        }
-    }
-
-    // ===============================
-    // 👤 PLAYER DRAW LOGIC (UNCHANGED)
-    // ===============================
-    table.players.forEach(p => {
-        if (p.waiting || p.isDealer) return;
-
-        const res = gameHelpers.calculateShanResult(p.cards);
-        if (res.points >= 8) return;
-
-        if (p.isAi && res.points < 4) p.drawAction = "draw";
-
-        if (p.drawAction === "draw" || (!p.drawAction && res.points < 4)) {
-            if (p.cards.length === 2) {
-                const card = table.deck[table.deckIndex++];
-                p.cards.push(card);
-                anyoneDrew = true;
-
-                const cardName = `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`;
-                console.log(`✅ [DRAW] Player: ${p.username} | Card: ${cardName}`);
-
-                broadcastToTable(tableId, {
-                    type: "game:player:draw",
-                    username: p.username,
-                    card: cardName
-                });
-            }
-        } else {
-            console.log(`❌ [STAY] Player: ${p.username} | Points: ${res.points}`);
-        }
-    });
-
-    // ===============================
-    // ⏭ NEXT PHASE
-    // ===============================
-    if (anyoneDrew) {
-        watchPhase.startWatchThreeCardPhase(tableId, roundId, () => {
-            dealerPhase.startDealerActionPhase(tableId, roundId, startFindWinnerPhase);
-        });
-        
-    } else {
-        startFindWinnerPhase(tableId, roundId);
-    }
-}
-
 
 function startFindWinnerPhase(tableId, roundId) {
     const table = tables[tableId];

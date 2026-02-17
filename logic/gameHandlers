@@ -8,7 +8,7 @@ const gameFlow = require("./gameFlow");
 const gameHelpers = require("./gameHelpers");
 const dealerPhase = require("./dealerPhase");
 const watchPhase = require("./watchPhase");
-//const drawPhase = require("./drawPhase");
+const drawPhase = require("./drawPhase");
 const resultPhase = require("./resultPhase");
 
 

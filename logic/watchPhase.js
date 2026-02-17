@@ -50,7 +50,8 @@ function startWatchThreeCardPhase(tableId, roundId, onComplete) {
     if (!table) return;
 
     let secondWatchTime = 7;
-
+      // 🔥 ADD THIS
+    broadcastToTable(tableId, { type: "ui:cardview:show", roundId });
     broadcastToTable(tableId, {
         type: "game:watch3card:start",
         seconds: secondWatchTime,

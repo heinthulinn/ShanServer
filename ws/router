@@ -11,6 +11,7 @@ const { joinTable } = require("../logic/tableJoin");
 const { handleSocialGift } = require("../social/giftHandler");
 const { handlePlayerMessage } = require("../social/messageHandler");
 const { handleSocialEmoji } = require("../social/emojiHandler");
+const dealerPhase = require("../logic/dealerPhase");
 
 
 function handleWsMessage(ws, raw) {
@@ -62,6 +63,11 @@ function handleWsMessage(ws, raw) {
       
     case "game:player:draw:request":
       return handlePlayerDrawRequest(ws, data);
+
+    case "game:dealer:decision":
+        // 2. Route the dealer's click to the handler
+        // We pass 'gameFlow.startFindWinnerPhase' so the game knows what to do after the catch
+      return dealerPhase.handleDealerDecision(ws, data, gameFlow.startFindWinnerPhase);
 
     case "game:result":
       return handleGameResult(ws, data);

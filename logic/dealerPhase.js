@@ -122,21 +122,16 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase,targ
     
         // 2️⃣ Wait 5 seconds
         setTimeout(() => {
-    
             // Hide UI
             broadcastToTable(tableId, {
                 type: "ui:dealercatchcardview:hide",
                 roundId
             });
-    
             // Continue game
             startFindWinnerPhase(tableId, roundId);
-    
         }, 5000);
     
         return;
-    
-
 
         case "catch3cards":
 

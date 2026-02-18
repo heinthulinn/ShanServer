@@ -84,7 +84,8 @@ function forceWinningHand(minPoints) {
  */
 function decideDealerWinners(players) {
     const dealer = players.find(p => p.isDealer);
-    if (!dealer) return [];
+    // 🛡️ SAFETY 1: No dealer or dealer has no cards? Skip.
+    if (!dealer || !dealer.cards || dealer.cards.length < 2) return [];
 
     const dealerHand = evaluateHand(dealer.cards);
     const winners = [];
@@ -93,9 +94,12 @@ function decideDealerWinners(players) {
 
     players.forEach(p => {
         if (p.isDealer) return;
-
+        // 🛡️ SAFETY 2: Skip players with invalid card counts (prevents the crash)
+        if (!p.cards || p.cards.length < 2) {
+            console.log(`⏩ Skipping ${p.username} - invalid hand for evaluation.`);
+            return;
+        }
         const pHand = evaluateHand(p.cards);
-        
         // Use the compareHands logic: 1 means player wins, -1 means dealer wins
         const result = compareHands(pHand, dealerHand);
 
@@ -117,7 +121,10 @@ function buildTableResult(table) {
         pot: table.players.reduce((sum, p) => sum + (p.currentBet || 0), 0),
         dealer: table.players.find(p => p.isDealer)?.username,
         players: table.players.map(p => {
-            const hand = evaluateHand(p.cards);
+            // 🛡️ SAFETY: If cards are missing, provide a dummy hand to avoid crash
+            const hand = (p.cards && p.cards.length >= 2) 
+                ? evaluateHand(p.cards) 
+                : { points: 0, isDo: false, multiplier: 1 };
             return {
                 name: p.username,
                 isAi: p.isAi,

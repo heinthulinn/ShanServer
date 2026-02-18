@@ -6,8 +6,16 @@ const gameHelpers = require("./gameHelpers");
 
 function startFindWinnerPhase(tableId, roundId, scheduleNextRound) {
     const table = tables[tableId];
-    let findWinnerTime = 5;
+    if (!table) return;
 
+    // 🔒 PHASE LOCK: Prevent multiple triggers for the same round
+    if (table.isProcessingResult === roundId) {
+        console.log(`⚠️ Blocked duplicate winner phase for Round: ${roundId}`);
+        return;
+    }
+    table.isProcessingResult = roundId;
+
+    let findWinnerTime = 5;
     broadcastToTable(tableId, { 
         type: "game:findwinner:start", 
         seconds: findWinnerTime, 
@@ -19,10 +27,16 @@ function startFindWinnerPhase(tableId, roundId, scheduleNextRound) {
 
         if (findWinnerTime <= 0) {
             clearInterval(table.findWinnerTimer);
-
+            table.findWinnerTimer = null;
             const activePlayers = table.players.filter(p => !p.waiting);
             const dealer = activePlayers.find(p => p.isDealer);
-            if (!dealer) return;
+            if (!dealer) 
+            {
+                // Unlock if dealer is missing so game doesn't get stuck
+                table.isProcessingResult = null;
+                return;
+            }
+               
 
             const winnerPlayers = gameHelpers.decideDealerWinners(activePlayers);
             table.currentWinners = winnerPlayers.map(p => p.username);

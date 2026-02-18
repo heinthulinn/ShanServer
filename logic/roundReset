@@ -14,7 +14,7 @@ function resetPlayersForNextRound(table) {
 
 function resetTableState(table) {
   table.gameInProgress = false;
-
+  table.isProcessingResult = null; // 🔥 CLEAR THE LOCK HERE
   // 🔴 CLEAR TIMERS
   if (table.countdownInterval) {
     clearInterval(table.countdownInterval);

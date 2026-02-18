@@ -99,102 +99,87 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase,targ
 
     console.log(`👑 [DEALER ACTION EXECUTE] ${action}`);
 
-    switch (action) 
-    {
+    switch (action) {
         case "catch":
+            if (!targetSeatId) return;
+            const targetPlayer = table.players.find(p => p.seatId === targetSeatId);
+            if (!targetPlayer) return;
 
-        if (!targetSeatId) return;
-    
-        const targetPlayer = table.players.find(p => p.seatId === targetSeatId);
-        if (!targetPlayer) return;
-    
-        // 1️⃣ Show Dealer Catch UI
-        broadcastToTable(tableId, {
-            type: "ui:dealercatchcardview:show",
-            dealer: {
-                seatId: dealer.seatId,
-                cards: dealer.cards
-            },
-            targetPlayer: {
-                seatId: targetPlayer.seatId,
-                cards: targetPlayer.cards
-            },
-            roundId
-        });
-    
-        // 2️⃣ Wait 5 seconds
-        setTimeout(() => {
-            // Hide UI
+            // 🔥 REVEAL: Flip the cards on the table for this player
             broadcastToTable(tableId, {
-                type: "ui:dealercatchcardview:hide",
+                type: "table:cards:reveal",
+                players: [{
+                    username: targetPlayer.username,
+                    seatId: targetPlayer.seatId,
+                    cards: targetPlayer.cards
+                }]
+            });
+
+            // 1️⃣ Show Dealer Catch UI (Keep this as is)
+            broadcastToTable(tableId, {
+                type: "ui:dealercatchcardview:show",
+                dealer: { seatId: dealer.seatId, cards: dealer.cards },
+                targetPlayer: { seatId: targetPlayer.seatId, cards: targetPlayer.cards },
                 roundId
             });
-            // Continue game
-            startFindWinnerPhase(tableId, roundId);
-        }, 5000);
-    
-        return;
+
+            setTimeout(() => {
+                broadcastToTable(tableId, { type: "ui:dealercatchcardview:hide", roundId });
+                startFindWinnerPhase(tableId, roundId);
+            }, 5000);
+            return;
 
         case "catch3cards":
+            const threeCardPlayers = table.players.filter(p => p.cards && p.cards.length === 3);
 
-        const threeCardPlayers = table.players
-            .filter(p => p.cards && p.cards.length === 3);
-    
-        broadcastToTable(tableId, {
-            type: "ui:dealercatchcardview:show",
-            dealer: {
-                seatId: dealer.seatId,
-                cards: dealer.cards
-            },
-            players: threeCardPlayers.map(p => ({
-                seatId: p.seatId,
-                cards: p.cards
-            })),
-            roundId
-        });
-    
-        setTimeout(() => {
-    
+            // 🔥 REVEAL: Flip all 3-card players on the table
             broadcastToTable(tableId, {
-                type: "ui:dealercatchcardview:hide",
+                type: "table:cards:reveal",
+                players: threeCardPlayers.map(p => ({
+                    username: p.username,
+                    seatId: p.seatId,
+                    cards: p.cards
+                }))
+            });
+
+            broadcastToTable(tableId, {
+                type: "ui:dealercatchcardview:show",
+                dealer: { seatId: dealer.seatId, cards: dealer.cards },
+                players: threeCardPlayers.map(p => ({ seatId: p.seatId, cards: p.cards })),
                 roundId
             });
-    
-            startFindWinnerPhase(tableId, roundId);
-    
-        }, 5000);
-    
-        return;
-    
+
+            setTimeout(() => {
+                broadcastToTable(tableId, { type: "ui:dealercatchcardview:hide", roundId });
+                startFindWinnerPhase(tableId, roundId);
+            }, 5000);
+            return;
 
         case "catchall":
+            const allOpponents = table.players.filter(p => !p.isDealer);
 
-    broadcastToTable(tableId, {
-        type: "ui:dealercatchcardview:show",
-        dealer: {
-            seatId: dealer.seatId,
-            cards: dealer.cards
-        },
-        players: table.players.map(p => ({
-            seatId: p.seatId,
-            cards: p.cards
-        })),
-        roundId
-    });
+            // 🔥 REVEAL: Flip EVERYONE on the table
+            broadcastToTable(tableId, {
+                type: "table:cards:reveal",
+                players: allOpponents.map(p => ({
+                    username: p.username,
+                    seatId: p.seatId,
+                    cards: p.cards
+                }))
+            });
 
-    setTimeout(() => {
+            broadcastToTable(tableId, {
+                type: "ui:dealercatchcardview:show",
+                dealer: { seatId: dealer.seatId, cards: dealer.cards },
+                players: allOpponents.map(p => ({ seatId: p.seatId, cards: p.cards })),
+                roundId
+            });
 
-        broadcastToTable(tableId, {
-            type: "ui:dealercatchcardview:hide",
-            roundId
-        });
-
-        startFindWinnerPhase(tableId, roundId);
-
-    }, 5000);
-
-    return;
-
+            setTimeout(() => {
+                broadcastToTable(tableId, { type: "ui:dealercatchcardview:hide", roundId });
+                startFindWinnerPhase(tableId, roundId);
+            }, 5000);
+            return;
 
         case "draw":
             if (!dealer.hasDrawn && dealer.cards.length === 2) {

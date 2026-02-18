@@ -139,6 +139,12 @@ function scheduleNextRound(tableId) {
     
     }, 3000);
 }
+
+const mapCardsToStrings = (cards) => {
+    if (!cards) return [];
+    const suitMap = { 4: "S", 3: "H", 2: "D", 1: "C" };
+    return cards.map(c => typeof c === 'string' ? c : `${c.rank}${suitMap[c.suit]}`);
+};
     
 function handleDealFinished(ws, data) {
     const { tableId, roundId } = data;
@@ -161,10 +167,7 @@ function handleDealFinished(ws, data) {
         });
 
         // Show peek UI first
-        broadcastToTable(tableId, { 
-            type: "ui:cardview:show", 
-            roundId 
-        });
+        broadcastToTable(tableId, { type: "ui:cardview:show", roundId});
 
         setTimeout(() => {
 
@@ -174,7 +177,7 @@ function handleDealFinished(ws, data) {
                 players: table.players.map(p => ({
                     username: p.username,
                     seatId: p.seatId,
-                    cards: p.cards
+                    cards: mapCardsToStrings(p.cards) // <-- THIS WAS THE BUG
                 }))
             });
 

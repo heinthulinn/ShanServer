@@ -53,7 +53,9 @@ function startDealerActionPhase(tableId, roundId, startFindWinnerPhase) {
 }
 
 function handleDealerDecision(ws, data, startFindWinnerPhase) {
-    const { tableId, action,targetSeatId} = data;
+    const { tableId, action} = data;
+    const targetSeatId = data.targetSeatId || data.seatId;
+    console.log(`👑 [DEALER ACTION RECEIVED] ${action} on Seat: ${targetSeatId}`);
     const table = tables[tableId];
     if (!table) return;
 

@@ -7,6 +7,7 @@ const { validUsers, aiPlayersList } = require("../state/users");
 const { assignBaseAiFirst } = require("../logic/tableHelpers");
 const { playerReady, handleGameResult,handlePlayerBet,handleDealFinished,scheduleNextRound,handlePlayerDrawRequest } = require("../logic/gameHandlers");
 const gameFlow = require("../logic/gameFlow");
+const resultPhase = require("../logic/resultPhase");
 const { joinTable } = require("../logic/tableJoin");
 const { handleSocialGift } = require("../social/giftHandler");
 const { handlePlayerMessage } = require("../social/messageHandler");
@@ -41,10 +42,7 @@ function handleWsMessage(ws, raw) {
       return checkBalance(ws, data);
 
     case "ai:players:list":
-      return wsSend(ws, {
-        type: "ai:players:list:res",
-        result: aiPlayersList
-      });
+      return wsSend(ws, {type: "ai:players:list:res", result: aiPlayersList});
 
     case "tables:list":
       return sendTableList(ws);
@@ -65,9 +63,8 @@ function handleWsMessage(ws, raw) {
       return handlePlayerDrawRequest(ws, data);
 
     case "game:dealer:decision":
-        // 2. Route the dealer's click to the handler
-        // We pass 'gameFlow.startFindWinnerPhase' so the game knows what to do after the catch
-      return dealerPhase.handleDealerDecision(ws, data, gameFlow.startFindWinnerPhase);
+      console.log("🎯 Routing Dealer Decision to resultPhase");
+      return dealerPhase.handleDealerDecision(ws,data,(tableId, roundId) => resultPhase.startFindWinnerPhase(tableId, roundId, scheduleNextRound));
 
     case "game:result":
       return handleGameResult(ws, data);

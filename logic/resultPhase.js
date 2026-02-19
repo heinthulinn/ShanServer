@@ -32,12 +32,9 @@ function startFindWinnerPhase(tableId, roundId, scheduleNextRound) {
             const dealer = activePlayers.find(p => p.isDealer);
             if (!dealer) 
             {
-                // Unlock if dealer is missing so game doesn't get stuck
                 table.isProcessingResult = null;
                 return;
             }
-               
-
             const winnerPlayers = gameHelpers.decideDealerWinners(activePlayers);
             table.currentWinners = winnerPlayers.map(p => p.username);
 
@@ -62,41 +59,39 @@ function startFindWinnerPhase(tableId, roundId, scheduleNextRound) {
 
 function startPayoutPhase(tableId, roundId, scheduleNextRound) {
     const table = tables[tableId];
-    let payoutTime = 5;
+    
+    // 1. Calculate the final numbers
+    const payoutResults = payoutWinners(table, table.players, table.currentWinners);
 
-    const payoutResults = payoutWinners(
-        table,
-        table.players,
-        table.currentWinners
-    );
-
+    // --- PHASE 1: COLLECT FROM LOSERS ---
+    // We send only the players where resultAmount <= 0
+    const losers = payoutResults.filter(r => r.resultAmount <= 0);
     broadcastToTable(tableId, { 
-        type: "game:payout:result", 
+        type: "game:payout:collect", 
         roundId, 
-        results: payoutResults 
+        losers 
     });
 
-    table.payoutTimer = setInterval(() => {
-        payoutTime--;
+    // Wait 2.5 seconds (adjust based on your chip animation speed)
+    setTimeout(() => {
+        
+        // --- PHASE 2: PAY TO WINNERS ---
+        // We send only the players where resultAmount > 0
+        const winners = payoutResults.filter(r => r.resultAmount > 0);
+        broadcastToTable(tableId, { 
+            type: "game:payout:pay", 
+            roundId, 
+            winners 
+        });
 
-        if (payoutTime <= 0) {
-            clearInterval(table.payoutTimer);
-
-            broadcastToTable(tableId, { 
-                type: "game:payout:end", 
-                roundId 
-            });
-
+        // Final Wait before ending the round
+        setTimeout(() => {
+            broadcastToTable(tableId, { type: "game:payout:end", roundId });
+            table.isProcessingResult = null; // Clear lock
             scheduleNextRound(tableId);
-        } 
-        else {
-            broadcastToTable(tableId, { 
-                type: "game:payout:tick", 
-                seconds: payoutTime, 
-                roundId 
-            });
-        }
-    }, 1000);
+        }, 3000);
+
+    }, 2500); 
 }
 
 module.exports = {

@@ -174,13 +174,19 @@ function handleDealFinished(ws, data) {
             // Reveal all table cards
             broadcastToTable(tableId, { 
                 type: "table:cards:reveal",
-                players: table.players.map(p => ({
-                    username: p.username,
-                    seatId: p.seatId,
-                    cards: mapCardsToStrings(p.cards), // <-- THIS WAS THE BUG
-                    points: res.points,      // 🔥 Send points immediately
-                    multiplier: res.multiplier
-                }))
+                players: table.players.map(p => {
+                    // 🔥 YOU NEEDED THIS LINE BELOW:
+                    const res = gameHelpers.calculateShanResult(p.cards); 
+                    
+                    return {
+                        username: p.username,
+                        seatId: p.seatId,
+                        cards: mapCardsToStrings(p.cards),
+                        points: res.points,      // Now 'res' is defined!
+                        multiplier: res.multiplier,
+                        isShan: res.isDo
+                    };
+                })
             });
 
             // Hide peek UI

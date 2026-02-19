@@ -70,7 +70,8 @@ function payoutWinners(table, players, winners) {
 
       results.push({
         username: p.username,
-        delta: totalStake,
+        seatId: p.seatId,        // 🔥 ADD THIS LINE
+        resultAmount: totalStake,
         balance: p.balance,
         multiplier: playerMultiplier,
         isDealer: false
@@ -97,7 +98,8 @@ function payoutWinners(table, players, winners) {
 
       results.push({
         username: p.username,
-        delta: -totalStake,
+        seatId: p.seatId,        // 🔥 ADD THIS LINE
+        resultAmount: -totalStake,
         balance: p.balance,
         multiplier: dealerMultiplier,
         isDealer: false
@@ -120,7 +122,8 @@ function payoutWinners(table, players, winners) {
 
   results.push({
     username: dealer.username,
-    delta: dealerDelta,
+    seatId: dealer.seatId,       // 🔥 ADD THIS LINE
+    resultAmount: dealerDelta,
     balance: dealer.balance,
     bankerPot: table.bankerPot,
     multiplier: dealer.multiplier || 1,

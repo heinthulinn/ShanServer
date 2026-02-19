@@ -70,7 +70,7 @@ function startPayoutPhase(tableId, roundId, scheduleNextRound) {
 
    // --- PHASE 1: COLLECT FROM LOSERS ---
     // Change r.resultAmount to r.delta. Also exclude dealer.
-    const losers = payoutResults.filter(r => r.delta <= 0 && r.username !== dealer.username);
+    const losers = payoutResults.filter(r => r.resultAmount < 0 && !r.isDealer);
     broadcastToTable(tableId, { 
         type: "game:payout:collect", 
         roundId, 
@@ -83,7 +83,7 @@ function startPayoutPhase(tableId, roundId, scheduleNextRound) {
         
        // --- PHASE 2: PAY TO WINNERS ---
         // Change r.resultAmount to r.delta. Also exclude dealer.
-        const winners = payoutResults.filter(r => r.delta > 0 && r.username !== dealer.username);
+        const winners = payoutResults.filter(r => r.resultAmount > 0 && !r.isDealer);
         broadcastToTable(tableId, { 
             type: "game:payout:pay", 
             roundId, 

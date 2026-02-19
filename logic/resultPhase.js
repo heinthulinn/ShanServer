@@ -68,9 +68,9 @@ function startPayoutPhase(tableId, roundId, scheduleNextRound) {
     // 1. Calculate the final numbers
     const payoutResults = payoutWinners(table, table.players, table.currentWinners);
 
-    // --- PHASE 1: COLLECT FROM LOSERS ---
-    // We send only the players where resultAmount <= 0
-    const losers = payoutResults.filter(r => r.resultAmount <= 0);
+   // --- PHASE 1: COLLECT FROM LOSERS ---
+    // Change r.resultAmount to r.delta. Also exclude dealer.
+    const losers = payoutResults.filter(r => r.delta <= 0 && r.username !== dealer.username);
     broadcastToTable(tableId, { 
         type: "game:payout:collect", 
         roundId, 
@@ -81,9 +81,9 @@ function startPayoutPhase(tableId, roundId, scheduleNextRound) {
     // Wait 2.5 seconds (adjust based on your chip animation speed)
     setTimeout(() => {
         
-        // --- PHASE 2: PAY TO WINNERS ---
-        // We send only the players where resultAmount > 0
-        const winners = payoutResults.filter(r => r.resultAmount > 0);
+       // --- PHASE 2: PAY TO WINNERS ---
+        // Change r.resultAmount to r.delta. Also exclude dealer.
+        const winners = payoutResults.filter(r => r.delta > 0 && r.username !== dealer.username);
         broadcastToTable(tableId, { 
             type: "game:payout:pay", 
             roundId, 

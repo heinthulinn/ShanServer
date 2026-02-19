@@ -177,7 +177,9 @@ function handleDealFinished(ws, data) {
                 players: table.players.map(p => ({
                     username: p.username,
                     seatId: p.seatId,
-                    cards: mapCardsToStrings(p.cards) // <-- THIS WAS THE BUG
+                    cards: mapCardsToStrings(p.cards), // <-- THIS WAS THE BUG
+                    points: res.points,      // 🔥 Send points immediately
+                    multiplier: res.multiplier
                 }))
             });
 

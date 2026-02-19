@@ -94,6 +94,21 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase, tar
     const dealer = table.players.find(p => p.isDealer);
     if (!table || !dealer) return;
 
+    // --- NEW HELPER FOR CORRECT POINTS ---
+    const prepareRevealData = (playerList) => {
+        return playerList.map(p => {
+            const result = gameHelpers.calculateShanResult(p.cards);
+            return {
+                username: p.username,
+                seatId: p.seatId,
+                cards: mapCardsToStrings(p.cards),
+                points: result.points,      // 🔥 Added: Correct points for 2 or 3 cards
+                multiplier: result.multiplier, // 🔥 Added: For x2, x3, etc.
+                isShan: result.isDo         // 🔥 Added: In case Unity needs to show "Shan!"
+            };
+        });
+    };
+
     if (dealer.hasDrawn === undefined) dealer.hasDrawn = false;
     console.log(`👑 [DEALER ACTION EXECUTE] ${action}`);
 
@@ -112,11 +127,7 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase, tar
 
             broadcastToTable(tableId, {
                 type: "table:cards:reveal",
-                players: [{
-                    username: targetPlayer.username,
-                    seatId: targetPlayer.seatId,
-                    cards: mapCardsToStrings(targetPlayer.cards) // 🔥 FIXED
-                }]
+                players: prepareRevealData([targetPlayer]) // 🔥 Use the helper
             });
 
             broadcastToTable(tableId, {
@@ -132,11 +143,7 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase, tar
             
             broadcastToTable(tableId, {
                 type: "table:cards:reveal",
-                players: threeCardPlayers.map(p => ({
-                    username: p.username,
-                    seatId: p.seatId,
-                    cards: mapCardsToStrings(p.cards) // 🔥 FIXED
-                }))
+                players: prepareRevealData(threeCardPlayers) // 🔥 Use the helper
             });
 
             broadcastToTable(tableId, {
@@ -152,11 +159,7 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase, tar
 
             broadcastToTable(tableId, {
                 type: "table:cards:reveal",
-                players: allOpponents.map(p => ({
-                    username: p.username,
-                    seatId: p.seatId,
-                    cards: mapCardsToStrings(p.cards) // 🔥 FIXED
-                }))
+                players: prepareRevealData(allOpponents) // 🔥 Use the helper
             });
 
             broadcastToTable(tableId, {

@@ -59,7 +59,12 @@ function startFindWinnerPhase(tableId, roundId, scheduleNextRound) {
 
 function startPayoutPhase(tableId, roundId, scheduleNextRound) {
     const table = tables[tableId];
-    
+    if (!table) return;
+
+    // 🔥 FIND THE DEALER SEAT HERE
+    const dealer = table.players.find(p => p.isDealer);
+    const dealerSeatId = dealer ? dealer.seatId : -1;
+
     // 1. Calculate the final numbers
     const payoutResults = payoutWinners(table, table.players, table.currentWinners);
 
@@ -69,6 +74,7 @@ function startPayoutPhase(tableId, roundId, scheduleNextRound) {
     broadcastToTable(tableId, { 
         type: "game:payout:collect", 
         roundId, 
+        dealerSeatId: dealerSeatId, // 🔥 Send explicitly to Unity
         losers 
     });
 
@@ -81,6 +87,7 @@ function startPayoutPhase(tableId, roundId, scheduleNextRound) {
         broadcastToTable(tableId, { 
             type: "game:payout:pay", 
             roundId, 
+            dealerSeatId: dealerSeatId, // 🔥 Send explicitly to Unity
             winners 
         });
 

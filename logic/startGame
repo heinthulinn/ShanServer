@@ -54,13 +54,6 @@ function startGame(ws, data) {
     table.gameInProgress = true;
 
     console.log(`🌀 SHAN ROUND STARTED | table=${tableId} | roundId=${table.roundId}`);
-// 🔥 ADD THIS EXACT BLOCK HERE:
-table.players.forEach(p => {
-    if (p.waiting) {
-        console.log(`✨ Promoted ${p.username} from Spectator to Active Player`);
-        p.waiting = false; 
-    }
-});
 
     // --- Build active players ---
     let players = table.players
@@ -112,6 +105,15 @@ table.players.forEach(p => {
 
     // --- 🔄 Sync updated info back to table.players (AUTHORITATIVE STATE) ---
     table.players.forEach(tp => {
+        // 🔥 ADD THIS CHECK
+        if (tp.waiting) {
+            tp.cards = [];
+            tp.points = 0;
+            tp.isDo = false;
+            tp.multiplier = 1;
+            console.log(`[SPECTATOR] ${tp.username} is watching.`);
+            return;
+        }
         const p = players.find(pl => pl.name === tp.username);
         if (p) {
             tp.cards = p.cards;
@@ -138,19 +140,21 @@ table.players.forEach(p => {
     });
 
     // --- Prepare final payload for Unity ---
-    const playersInRound = players.map(p => {
-        const result = gameHelpers.calculateShanResult(p.cards);
+    const playersInRound = table.players.map(tp => {
+        const result = gameHelpers.calculateShanResult(tp.cards || []);
     
         return {
-            name: p.name,
-            isAi: p.isAi,
-            seatId: p.seatId,
-            unit: p.unit,
-            cards: formatCardsForUnity(p.cards),
-            points: result.points,
-            isDo: result.isDo,          // ✅ SERVER AUTHORITY
-            multiplier: result.multiplier,
-            isDealer: p.isDealer
+            name: tp.username,
+            isAi: tp.isAi,
+            seatId: tp.seatId,
+            unit: tp.balance,
+            // 🔥 If waiting, send empty cards so Unity hides them
+            cards: tp.waiting ? [] : formatCardsForUnity(tp.cards || []),
+            points: tp.waiting ? 0 : tp.points,
+            isDo: tp.waiting ? false : tp.isDo,
+            multiplier: tp.waiting ? 1 : tp.multiplier,
+            isDealer: tp.isDealer,
+            waiting: tp.waiting // 🔥 Send this flag!
         };
     });
     

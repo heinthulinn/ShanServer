@@ -124,20 +124,42 @@ function handlePlayerDrawRequest(ws, data)
 
 function scheduleNextRound(tableId) {
     const table = tables[tableId];
+    // 🔥 STOP! If we are already waiting to restart, don't run this again.
     if (!table || table.waitingForNextRound) return;
-    table.waitingForNextRound = true;
-    setTimeout(() => {
-      [table.countdownInterval, table.betInterval, table.watchTimer, table.findWinnerTimer, table.payoutTimer].forEach(t => t && clearInterval(t));
-      table.countdownInterval = table.betInterval = table.watchTimer = table.findWinnerTimer = table.payoutTimer = null;
-      resetTableState(table);
-      resetPlayersForNextRound(table);
-      table.gameInProgress = table.roundInProgress = table.watchTimerStarted = table.dealAckReceived = table.waitingForNextRound = table.autoStartCalled = false;
-      table.players.forEach(p => p.ready = true);
-      if (!table.countdownInterval && !table.betInterval && !table.roundInProgress) {
-        gameFlow.autoStart(table);
-    }
     
-    }, 3000);
+    table.waitingForNextRound = true;
+    console.log(`⏳ Round over. Cleaning table ${tableId}...`);
+
+    setTimeout(() => {
+        // 1. FORCE CLEAR all timers so they don't overlap
+        [table.countdownInterval, table.betInterval, table.watchTimer, table.findWinnerTimer, table.payoutTimer].forEach(t => {
+            if (t) clearInterval(t);
+        });
+        table.countdownInterval = table.betInterval = table.watchTimer = table.findWinnerTimer = table.payoutTimer = null;
+
+        // 2. WIPE the table and players (Promotes spectators to players)
+        resetTableState(table);
+        resetPlayersForNextRound(table); 
+
+        // 3. RESET all state flags to "Fresh"
+        table.gameInProgress = false;
+        table.roundInProgress = false;
+        table.watchTimerStarted = false;
+        table.dealAckReceived = false;
+        table.autoStartCalled = false;
+        
+        // 4. FORCE READY: This ensures the loop doesn't wait for human clicks
+        table.players.forEach(p => p.ready = true);
+
+        // 5. UNLOCK the scheduler for the next round
+        table.waitingForNextRound = false;
+
+        // 6. 🚀 THE JUMPSTART
+        if (table.players.length > 0) {
+            console.log("♻️ Auto-Restarting next round now...");
+            gameFlow.autoStart(table);
+        }
+    }, 4000); // 4 seconds: Perfect time for Unity to finish payout animations
 }
 
 const mapCardsToStrings = (cards) => {

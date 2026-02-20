@@ -17,7 +17,8 @@ function formatCardsForUnity(cards) {
 }
 
 function startGame(ws, data) {
-    const tableId = data.tableId;
+   // const tableId = data.tableId;
+    const tableId = (data && data.tableId) ? data.tableId : data;
     const table = tables[tableId];
     if (!table) return;
 
@@ -53,6 +54,13 @@ function startGame(ws, data) {
     table.gameInProgress = true;
 
     console.log(`🌀 SHAN ROUND STARTED | table=${tableId} | roundId=${table.roundId}`);
+// 🔥 ADD THIS EXACT BLOCK HERE:
+table.players.forEach(p => {
+    if (p.waiting) {
+        console.log(`✨ Promoted ${p.username} from Spectator to Active Player`);
+        p.waiting = false; 
+    }
+});
 
     // --- Build active players ---
     let players = table.players

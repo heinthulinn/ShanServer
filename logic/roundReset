@@ -2,13 +2,8 @@
 
 function resetPlayersForNextRound(table) {
   table.players.forEach(p => {
-    // 🔥 If they were waiting (spectating), they are now IN
-    if (p.waiting) {
-        console.log(`✨ Promoted ${p.username} to Active Player`);
-        p.waiting = false;
-    }
-    
-    p.ready = true; 
+    p.ready = true;
+    p.waiting = false;
     delete p.currentBet;
     delete p.cards;
     delete p.hand;

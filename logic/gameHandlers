@@ -176,6 +176,9 @@ function handleDealFinished(ws, data) {
     table.dealAckReceived = true;
 
     const dealer = table.players.find(p => p.isDealer);
+    if (!dealer || !Array.isArray(dealer.cards) || dealer.cards.length < 2) {
+        return; // safety exit
+    }
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
 
     // ===============================
@@ -197,6 +200,16 @@ function handleDealFinished(ws, data) {
             broadcastToTable(tableId, { 
                 type: "table:cards:reveal",
                 players: table.players.map(p => {
+                    if (!Array.isArray(p.cards) || p.cards.length < 2) {
+                        return {
+                            username: p.username,
+                            seatId: p.seatId,
+                            cards: [],
+                            points: 0,
+                            multiplier: 1,
+                            isShan: false
+                        };
+                    }
                     // 🔥 YOU NEEDED THIS LINE BELOW:
                     const res = gameHelpers.calculateShanResult(p.cards); 
                     

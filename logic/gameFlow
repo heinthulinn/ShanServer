@@ -44,7 +44,7 @@ function assignDealerForRound(table) {
   // --- 🔄 ROTATION LOGIC ---
   table.dealerRoundsPlayed = table.dealerRoundsPlayed || 0;
 
- /*const warningExpired = table.isWarningActive && table.dealerWarningRounds >= 3;
+ const warningExpired = table.isWarningActive && table.dealerWarningRounds >= 3;
   const normalSessionExpired = !table.isWarningActive && table.dealerRoundsPlayed >= 5; // Set to 5 for standard play
   const isBroke = table.bankerPot <= 0 && table.currentDealerName;
 
@@ -52,14 +52,14 @@ function assignDealerForRound(table) {
       console.log(`🔄 Rotating Dealer: Reason(Warning:${warningExpired}, Normal:${normalSessionExpired}, Broke:${isBroke})`);
       finalizeBankerSession(table);
       table.dealerRoundsPlayed = 0; 
-  } */
+  } 
  // --- FORCED TEST DEALER HACK ---
- const humanPlayer = table.players.find(p => !p.isAi); // Find you (the human)
+/* const humanPlayer = table.players.find(p => !p.isAi); // Find you (the human)
  if (humanPlayer) {
      table.currentDealerName = humanPlayer.username;
      table.bankerPot = 999999; // Give huge balance so it never expires
      table.dealerStartPot = 999999;
- }
+ } */
  // -------------------------------
 
   // --- DEALER SELECTION ---

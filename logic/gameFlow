@@ -21,7 +21,13 @@ function autoStart(table) {
     console.log("⛔ autoStart blocked — countdown already running");
     return;
   }
-  if (table.roundInProgress || table.betInterval) return;
+  //if (table.roundInProgress || table.betInterval) return;
+  if (
+    table.roundInProgress ||
+    table.betInterval ||
+    table.countdownInterval ||
+    table.gameInProgress
+) return;
 
   const realPlayers = table.players.filter(p => !p.isAi);
   if (realPlayers.length < 1) return;
@@ -277,7 +283,7 @@ function startBettingPhase(table) {
 
       setTimeout(() => {
         // ✅ CRITICAL FIX: Reset roundInProgress so Unity hides the Countdown UI
-        table.roundInProgress = false; 
+      //  table.roundInProgress = false; 
 
         if (startGameFn) startGameFn(null, { tableId: table.tableId });
         

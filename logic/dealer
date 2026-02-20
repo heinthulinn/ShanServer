@@ -1,0 +1,21 @@
+// ===== dealer.js =====
+function assignDealer(players, dealerIndex) {
+  if (!players.length) return -1;
+
+  const index = dealerIndex % players.length;
+
+  players.forEach(p => (p.isDealer = false));
+  players[index].isDealer = true;
+
+  return index;
+}
+
+function nextDealerIndex(currentIndex, playerCount) {
+  if (playerCount === 0) return 0;
+  return (currentIndex + 1) % playerCount;
+}
+
+module.exports = {
+  assignDealer,
+  nextDealerIndex
+};

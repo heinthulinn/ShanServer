@@ -75,7 +75,9 @@ function runAIDealerAction(tableId, roundId, startFindWinnerPhase) {
     const dealer = table.players.find(p => p.isDealer);
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
 
-    const threeCardPlayers = table.players.filter(p => p.cards.length === 3);
+    const threeCardPlayers = table.players.filter(
+        p => Array.isArray(p.cards) && p.cards.length === 3
+    );
 
     let action = "skip";
 

@@ -3,7 +3,10 @@
 // Import the new Shan evaluation functions
 const { evaluateHand, compareHands } = require("./shanRules");// new
 const { createDeck, shuffle } = require("./dealCards");
+
 function formatCardsForUnity(cards) {
+    if (!Array.isArray(cards)) return [];
+
     const suitMap = { 4: "S", 3: "H", 2: "D", 1: "C" };
     return cards.map(c => `${c.rank}${suitMap[c.suit]}`);
 }
@@ -105,9 +108,9 @@ function decideDealerWinners(players) {
 
         if (result === 1) {
             winners.push(p);
-            console.log(`PLAYER ${p.name} WINS with ${pHand.points} pts (x${pHand.multiplier})`);
+            console.log(`PLAYER ${p.username} WINS with ${pHand.points} pts (x${pHand.multiplier})`);
         } else {
-            console.log(`PLAYER ${p.name} LOSES to dealer`);
+            console.log(`PLAYER ${p.username} LOSES to dealer`);
         }
     });
 
@@ -122,7 +125,7 @@ function buildTableResult(table) {
         dealer: table.players.find(p => p.isDealer)?.username,
         players: table.players.map(p => {
             // 🛡️ SAFETY: If cards are missing, provide a dummy hand to avoid crash
-            const hand = (p.cards && p.cards.length >= 2) 
+            const hand = (Array.isArray(p.cards) && p.cards.length >= 2)
                 ? evaluateHand(p.cards) 
                 : { points: 0, isDo: false, multiplier: 1 };
             return {

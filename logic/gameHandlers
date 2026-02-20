@@ -18,52 +18,55 @@ function playerReady(ws, data) {
     const player = table.players.find(p => p.username === data.username && !p.isAi);
     if (!player) return;
   
-    player.ws = ws; // Keep this for server logic
-  
-    if (table.roundInProgress) {
-      // This part is already clean in your code
-      wsSend(ws, {
-        type: "table:full:update",
-        tableId: table.tableId,
-        gameInProgress: table.gameInProgress,
-        players: table.players.map(p => ({
-          seatId: p.seatId,
-          username: p.username,
-          balance: p.balance,
-          isAi: p.isAi,
-          ready: p.ready,
-          waiting: p.waiting,
-          currentBet: p.currentBet || 0,
-          cards: p.cards || []
-        }))
-      });
-      return;
+    player.ws = ws; 
+    player.ready = true; // Mark them ready immediately upon joining
+
+    // 1. If a round is ALREADY running, just send them the current state
+    if (table.gameInProgress || table.roundInProgress) {
+        player.waiting = true; // They must watch
+        wsSend(ws, {
+            type: "table:full:update",
+            tableId: table.tableId,
+            gameInProgress: table.gameInProgress,
+            players: table.players.map(p => ({
+                seatId: p.seatId,
+                username: p.username,
+                balance: p.balance,
+                isAi: p.isAi,
+                ready: p.ready,
+                waiting: p.waiting,
+                currentBet: p.currentBet || 0,
+                cards: p.cards || []
+            }))
+        });
+        return;
     }
-  
-    if (player.ready) return;
-    player.ready = true;
-  
-    // 🔥 FIX: Clean the broadcast here so Unity doesn't crash
+
+    // 2. If the table is IDLE (no round running), START it immediately
+    // We set the player to 'waiting: true' so they watch the AI for the first round
+    console.log(`👤 ${player.username} joined an idle table. Starting AI intro round...`);
+    player.waiting = true; 
+
+    // Broadcast the join to everyone
     broadcastToTable(table.tableId, { 
-      type: "table:full:update", 
-      tableId: table.tableId, 
-      gameInProgress: table.gameInProgress, 
-      players: table.players.map(p => ({
-          seatId: p.seatId,
-          username: p.username,
-          balance: p.balance,
-          isAi: p.isAi,
-          ready: p.ready,
-          waiting: p.waiting
-      }))
+        type: "table:full:update", 
+        tableId: table.tableId, 
+        gameInProgress: table.gameInProgress, 
+        players: table.players.map(p => ({
+            seatId: p.seatId,
+            username: p.username,
+            balance: p.balance,
+            isAi: p.isAi,
+            ready: p.ready,
+            waiting: p.waiting
+        }))
     });
-  
-    const preRoundPlayers = table.players.filter(p => !p.waiting && !table.roundInProgress);
-    if (preRoundPlayers.every(p => p.ready)) {
-      table.autoStartCalled = true;
-      gameFlow.autoStart(table);
-    }
-  }
+
+    // 3. 🚀 TRIGGER THE LOOP
+    // We don't check if others are ready. We just start.
+    table.autoStartCalled = true;
+    gameFlow.autoStart(table);
+}
 
 function handlePlayerBet(ws, data) {
   const table = tables[data.tableId];

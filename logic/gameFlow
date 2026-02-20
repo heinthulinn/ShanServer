@@ -12,23 +12,36 @@ function autoStart(table) {
     roundInProgress: table.roundInProgress,
     countdownInterval: !!table.countdownInterval,
     betInterval: !!table.betInterval,
-    ready: table.players.map(p => p.ready)
+    playerWaiting: table.players.map(p => ({ n: p.username, w: p.waiting, r: p.ready }))
   });
 
   if (!table || table.players.length === 0) return;
-  // 🔥 ADD THIS BLOCK HERE
-  if (table.countdownInterval) {
-    console.log("⛔ autoStart blocked — countdown already running");
+
+  // 1. ⛔ BLOCH CHECK: Don't start if a phase is already running
+  if (table.countdownInterval || table.roundInProgress || table.betInterval) {
     return;
   }
-  if (table.roundInProgress || table.betInterval) return;
 
+  // 2. PLAYER COUNT CHECK: Need at least 3 entities (AI + Humans) to play
+  if (table.players.length < 3) {
+    console.log("⚠️ Not enough players/AI to start yet.");
+    return;
+  }
+
+  // 3. 🔥 THE "WATCHING" LOGIC: 
+  // If a human is NOT ready, we don't stop the game. 
+  // Instead, we mark them as 'waiting' so they watch this round.
   const realPlayers = table.players.filter(p => !p.isAi);
-  if (realPlayers.length < 1) return;
-  if (table.players.length < 3) return; 
-  if (!realPlayers.every(p => p.ready)) return;
+  realPlayers.forEach(p => {
+    if (!p.ready) {
+      p.waiting = true; 
+      console.log(`👀 ${p.username} is not ready. Marked as Spectator (waiting) for this round.`);
+    }
+  });
 
-  console.log(`🔥 TABLE READY → STARTING SHAN GAME | table=${table.tableId}`);
+  // 4. 🚀 START THE LOOP:
+  // Even if all real players are 'waiting', the AI will start the game now.
+  console.log(`🔥 TABLE HEARTBEAT → STARTING SHAN GAME | table=${table.tableId}`);
   startGameForTable(table);
 }
 

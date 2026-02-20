@@ -2,16 +2,23 @@
 
 function resetPlayersForNextRound(table) {
   table.players.forEach(p => {
-    // 🔥 If they were waiting (spectating), they are now IN
+    // 🔥 PROMOTION: If they joined mid-round, they are now active players
     if (p.waiting) {
-        console.log(`✨ Promoted ${p.username} to Active Player`);
+        console.log(`✨ [PROMOTION] ${p.username} is now an Active Player for the new round.`);
         p.waiting = false;
     }
     
+    // 🛡️ FORCE READY: This ensures the autoStart loop doesn't wait for clicks
     p.ready = true; 
+
+    // 🧹 CLEANUP: Remove hand data
     delete p.currentBet;
     delete p.cards;
     delete p.hand;
+    delete p.points;      // Added: Clear points from previous round
+    delete p.multiplier;  // Added: Clear multiplier from previous round
+    delete p.isDo;       // Added: Clear 'Do' status
+    
     p.hasDrawn = false;
     p.drawAction = null;
   });
@@ -19,35 +26,29 @@ function resetPlayersForNextRound(table) {
 
 function resetTableState(table) {
   table.gameInProgress = false;
-  table.isProcessingResult = null; // 🔥 CLEAR THE LOCK HERE
-  // 🔴 CLEAR TIMERS
-  if (table.countdownInterval) {
-    clearInterval(table.countdownInterval);
-    table.countdownInterval = null;
-  }
+  table.isProcessingResult = null; 
 
-  if (table.betInterval) {
-    clearInterval(table.betInterval);
-    table.betInterval = null;
-  }
+  // 🔴 CLEAR TIMERS (using clear+null for safety)
+  const timerKeys = ['countdownInterval', 'betInterval', 'watchTimer', 'findWinnerTimer', 'payoutTimer'];
+  timerKeys.forEach(key => {
+    if (table[key]) {
+      clearInterval(table[key]);
+      table[key] = null;
+    }
+  });
 
-  // 🔁 reset values (NOT null)
+  // 🔁 Reset variables
   table.countdown = 0;
   table.betTime = 5;
-
-  // 🔥 round authority cleanup
   table.dealAckReceived = false;
   table.watchTimerStarted = false;
-
-  if (table.watchTimer) {
-    clearInterval(table.watchTimer);
-    table.watchTimer = null;
-  }
-
   table.currentWinners = [];
 
   table.roundState.inProgress = false;
   table.roundState.startedAt = 0;
+  
+  // 🔥 IMPORTANT: Ensure autoStartCalled is reset for the loop
+  table.autoStartCalled = false; 
 }
 
 module.exports = {

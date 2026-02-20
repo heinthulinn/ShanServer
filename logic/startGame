@@ -17,8 +17,7 @@ function formatCardsForUnity(cards) {
 }
 
 function startGame(ws, data) {
-   // const tableId = data.tableId;
-    const tableId = (data && data.tableId) ? data.tableId : data;
+    const tableId = data.tableId;
     const table = tables[tableId];
     if (!table) return;
 
@@ -105,15 +104,6 @@ function startGame(ws, data) {
 
     // --- 🔄 Sync updated info back to table.players (AUTHORITATIVE STATE) ---
     table.players.forEach(tp => {
-        // 🔥 ADD THIS CHECK
-        if (tp.waiting) {
-            tp.cards = [];
-            tp.points = 0;
-            tp.isDo = false;
-            tp.multiplier = 1;
-            console.log(`[SPECTATOR] ${tp.username} is watching.`);
-            return;
-        }
         const p = players.find(pl => pl.name === tp.username);
         if (p) {
             tp.cards = p.cards;
@@ -140,21 +130,19 @@ function startGame(ws, data) {
     });
 
     // --- Prepare final payload for Unity ---
-    const playersInRound = table.players.map(tp => {
-        const result = gameHelpers.calculateShanResult(tp.cards || []);
+    const playersInRound = players.map(p => {
+        const result = gameHelpers.calculateShanResult(p.cards);
     
         return {
-            name: tp.username,
-            isAi: tp.isAi,
-            seatId: tp.seatId,
-            unit: tp.balance,
-            // 🔥 If waiting, send empty cards so Unity hides them
-            cards: tp.waiting ? [] : formatCardsForUnity(tp.cards || []),
-            points: tp.waiting ? 0 : tp.points,
-            isDo: tp.waiting ? false : tp.isDo,
-            multiplier: tp.waiting ? 1 : tp.multiplier,
-            isDealer: tp.isDealer,
-            waiting: tp.waiting // 🔥 Send this flag!
+            name: p.name,
+            isAi: p.isAi,
+            seatId: p.seatId,
+            unit: p.unit,
+            cards: formatCardsForUnity(p.cards),
+            points: result.points,
+            isDo: result.isDo,          // ✅ SERVER AUTHORITY
+            multiplier: result.multiplier,
+            isDealer: p.isDealer
         };
     });
     

@@ -32,60 +32,69 @@ function handleWsMessage(ws, raw) {
     return;
   }
 
-  switch (data.type) {
+  try {
+    switch (data.type) {
 
-    case "user:validate":
-      return validateUser(ws, data);
+      case "user:validate":
+        return validateUser(ws, data);
 
-    case "user:balance":
-    case "user:balance:check":
-      return checkBalance(ws, data);
+      case "user:balance":
+      case "user:balance:check":
+        return checkBalance(ws, data);
 
-    case "ai:players:list":
-      return wsSend(ws, {type: "ai:players:list:res", result: aiPlayersList});
+      case "ai:players:list":
+        return wsSend(ws, {type: "ai:players:list:res", result: aiPlayersList});
 
-    case "tables:list":
-      return sendTableList(ws);
+      case "tables:list":
+        return sendTableList(ws);
 
-    case "tables:join":
-      return joinTable(ws, data);
+      case "tables:join":
+        return joinTable(ws, data);
 
-    case "tables:leave":
-      return leaveTable(ws, data);
+      case "tables:leave":
+        return leaveTable(ws, data);
 
-    case "player:ready":
-      return playerReady(ws, data);
-    
-    case "game:bet":
-      return handlePlayerBet(ws, data);
-
-    case "game:deal:finished":
-      return handleDealFinished(ws, data);
+      case "player:ready":
+        return playerReady(ws, data);
       
-    case "game:player:draw:request":
-      return handlePlayerDrawRequest(ws, data);
+      case "game:bet":
+        return handlePlayerBet(ws, data);
 
-    case "game:dealer:decision":
-      console.log("🎯 Routing Dealer Decision to resultPhase");
-      return dealerPhase.handleDealerDecision(ws,data,(tableId, roundId) => resultPhase.startFindWinnerPhase(tableId, roundId, scheduleNextRound));
+      case "game:deal:finished":
+        return handleDealFinished(ws, data);
+        
+      case "game:player:draw:request":
+        return handlePlayerDrawRequest(ws, data);
 
-    case "game:result":
-      return handleGameResult(ws, data);
+      case "game:dealer:decision":
+        console.log("🎯 Routing Dealer Decision to resultPhase");
+        return dealerPhase.handleDealerDecision(ws,data,(tableId, roundId) => resultPhase.startFindWinnerPhase(tableId, roundId, scheduleNextRound));
 
-    case "game:restart":
-      return scheduleNextRound(data.tableId);
+      case "game:result":
+        return handleGameResult(ws, data);
 
-    case "social:gift":
-    return handleSocialGift(ws, data);
+      case "game:restart":
+        return scheduleNextRound(data.tableId);
 
-    case "social:message":
-      return handlePlayerMessage(ws, data);
+      case "social:gift":
+      return handleSocialGift(ws, data);
+
+      case "social:message":
+        return handlePlayerMessage(ws, data);
+      
+      case "social:emoji":
+        return handleSocialEmoji(ws, data);
     
-    case "social:emoji":
-      return handleSocialEmoji(ws, data);
-  
-    default:
-      console.log("⚠ Unknown message type:", data.type);
+      default:
+        console.log("⚠ Unknown message type:", data.type);
+    }
+  } catch (error) {
+    console.error(`❌ Handler error for type=${data.type}`, error);
+    try {
+      wsSend(ws, { type: "error", message: "internal handler error" });
+    } catch (sendError) {
+      console.error("❌ Failed to send handler error response", sendError);
+    }
   }
 }
 

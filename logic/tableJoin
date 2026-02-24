@@ -45,6 +45,10 @@ function leaveTable(ws, d = {}) {
   const username = d.username || ws.username;
   const isDisconnect = !!d.isDisconnect;
 
+  if (isDisconnect) {
+    console.log(`[LEAVE] disconnect requested user=${username || "unknown"} table=${tableId || "unknown"}`);
+  }
+
   if (!tableId || !username) {
     if (!isDisconnect) {
       wsSend(ws, {
@@ -83,9 +87,36 @@ function leaveTable(ws, d = {}) {
   }
 
   if (table.roundInProgress) {
+    if (!targetPlayer) {
+      console.warn(`[LEAVE] deferred target missing user=${username} table=${tableId} (no-op)`);
+      if (!isDisconnect) {
+        wsSend(ws, {
+          type: "tables:leave:res",
+          success: false,
+          tableId,
+          error: "User not at this table"
+        });
+      }
+      return;
+    }
+
+    if (targetPlayer.leaveAfterRound) {
+      console.log(`[LEAVE] deferred already marked user=${username} table=${tableId}`);
+      if (!isDisconnect) {
+        wsSend(ws, {
+          type: "tables:leave:res",
+          success: true,
+          tableId,
+          deferredUntilRoundEnd: true
+        });
+      }
+      return;
+    }
+
     targetPlayer.leaveAfterRound = true;
     targetPlayer.leaveReason = isDisconnect ? "disconnect" : "manual";
     targetPlayer.leaveRequestedAt = Date.now();
+    console.log(`[LEAVE] deferred marked user=${username} table=${tableId} reason=${targetPlayer.leaveReason}`);
 
     console.log(
       `🕒 Deferred leave for ${username} on ${tableId} until round end (${targetPlayer.leaveReason})`

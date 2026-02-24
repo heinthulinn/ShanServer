@@ -32,7 +32,9 @@ function startFindWinnerPhase(tableId, roundId, scheduleNextRound) {
             const dealer = activePlayers.find(p => p.isDealer);
             if (!dealer) 
             {
+                console.error(`❌ No dealer found at result phase on ${tableId}, forcing next round`);
                 table.isProcessingResult = null;
+                scheduleNextRound(tableId);
                 return;
             }
             const winnerPlayers = gameHelpers.decideDealerWinners(activePlayers);

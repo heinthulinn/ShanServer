@@ -54,6 +54,7 @@ function buildGameStateSnapshot(table) {
         seatId: player.seatId,
         username: player.username,
         waiting: !!player.waiting,
+        leaveAfterRound: !!player.leaveAfterRound,
         isDealer: !!player.isDealer,
         cards,
         points,

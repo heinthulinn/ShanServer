@@ -69,13 +69,8 @@ function leaveTable(ws, d = {}) {
     return;
   }
 
-  const hadPlayer = table.players.some(p => p.username === username && !p.isAi);
-  table.players = table.players.filter(p => p.username !== username);
-
-  if (ws && ws.tableId === tableId && ws.username === username) {
-    ws.tableId = null;
-    ws.username = null;
-  }
+  const targetPlayer = table.players.find(p => p.username === username && !p.isAi);
+  const hadPlayer = !!targetPlayer;
 
   if (!hadPlayer && !isDisconnect) {
     wsSend(ws, {
@@ -85,6 +80,33 @@ function leaveTable(ws, d = {}) {
       error: "User not at this table"
     });
     return;
+  }
+
+  if (table.roundInProgress) {
+    targetPlayer.leaveAfterRound = true;
+    targetPlayer.leaveReason = isDisconnect ? "disconnect" : "manual";
+    targetPlayer.leaveRequestedAt = Date.now();
+
+    console.log(
+      `🕒 Deferred leave for ${username} on ${tableId} until round end (${targetPlayer.leaveReason})`
+    );
+
+    if (!isDisconnect) {
+      wsSend(ws, {
+        type: "tables:leave:res",
+        success: true,
+        tableId,
+        deferredUntilRoundEnd: true
+      });
+    }
+    return;
+  }
+
+  table.players = table.players.filter(p => p.username !== username);
+
+  if (ws && ws.tableId === tableId && ws.username === username) {
+    ws.tableId = null;
+    ws.username = null;
   }
 
   if (table.players.filter(p => !p.isAi).length === 0) {
@@ -106,7 +128,8 @@ function leaveTable(ws, d = {}) {
     wsSend(ws, {
       type: "tables:leave:res",
       success: true,
-      tableId
+      tableId,
+      deferredUntilRoundEnd: false
     });
   }
 }

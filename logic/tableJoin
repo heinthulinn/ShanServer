@@ -2,6 +2,25 @@ const { tables } = require("../state/tables");
 const { validUsers } = require("../state/users");
 const { wsSend, broadcastToTable } = require("../ws/sender");
 const { assignBaseAiFirst } = require("./tableHelpers");
+const { hardResetTable } = require("./roundReset");
+
+function hasStaleTableState(table) {
+  return Boolean(
+    table.roundInProgress ||
+    table.gameInProgress ||
+    table.waitingForNextRound ||
+    table.dealAckReceived ||
+    table.watchTimerStarted ||
+    table.isProcessingResult ||
+    table.autoStartCalled ||
+    table.countdownInterval ||
+    table.betInterval ||
+    table.watchTimer ||
+    table.findWinnerTimer ||
+    table.payoutTimer ||
+    table.currentWinners?.length
+  );
+}
 
 function joinTable(ws, d) {
   const u = validUsers.find(x => x.username === d.username);
@@ -20,6 +39,12 @@ function joinTable(ws, d) {
       success: false,
       error: "Table not found"
     });
+  }
+
+  const realPlayersCountBeforeJoin = table.players.filter(p => !p.isAi).length;
+  if (realPlayersCountBeforeJoin === 0 && hasStaleTableState(table)) {
+    console.log(`🛠 Defensive reset on join for ${table.tableId} (stale state detected)`);
+    hardResetTable(table);
   }
 
   const alreadyJoined = table.players.find(

@@ -50,7 +50,54 @@ function resetTableState(table) {
   table.roundState.startedAt = 0;
 }
 
+function hardResetTable(table) {
+  if (!table) return;
+
+  [
+    table.countdownInterval,
+    table.betInterval,
+    table.watchTimer,
+    table.findWinnerTimer,
+    table.payoutTimer
+  ].forEach(timer => {
+    if (!timer) return;
+    clearInterval(timer);
+    clearTimeout(timer);
+  });
+
+  table.countdownInterval = null;
+  table.betInterval = null;
+  table.watchTimer = null;
+  table.findWinnerTimer = null;
+  table.payoutTimer = null;
+
+  table.gameInProgress = false;
+  table.roundInProgress = false;
+  table.waitingForNextRound = false;
+  table.dealAckReceived = false;
+  table.watchTimerStarted = false;
+  table.isProcessingResult = null;
+  table.autoStartCalled = false;
+
+  table.countdown = 0;
+  table.betTime = 5;
+  table.currentWinners = [];
+
+  if (!table.roundState) table.roundState = {};
+  table.roundState.inProgress = false;
+  table.roundState.startedAt = 0;
+
+  table.players = [];
+  table.currentDealerName = null;
+  table.bankerPot = 0;
+  table.dealerStartPot = 0;
+  table.dealerRoundsPlayed = 0;
+  table.isWarningActive = false;
+  table.dealerWarningRounds = 0;
+}
+
 module.exports = {
   resetPlayersForNextRound,
-  resetTableState
+  resetTableState,
+  hardResetTable
 };

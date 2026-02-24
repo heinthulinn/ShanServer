@@ -3,6 +3,7 @@ const { validUsers } = require("../state/users");
 const { wsSend, broadcastToTable } = require("../ws/sender");
 const { assignBaseAiFirst } = require("./tableHelpers");
 const { hardResetTable } = require("./roundReset");
+const { buildGameStateSnapshot } = require("./tableSnapshot");
 
 function hasStaleTableState(table) {
   return Boolean(
@@ -122,6 +123,10 @@ function joinTable(ws, d) {
       waiting: p.waiting
     }))
   });
+
+  if (table.roundInProgress) {
+    wsSend(ws, buildGameStateSnapshot(table));
+  }
 
   // 3️⃣ notify others
   broadcastToTable(table.tableId, {

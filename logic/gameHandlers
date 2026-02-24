@@ -38,6 +38,7 @@ function finalizeDeferredLeaves(table) {
   });
 
   table.players = table.players.filter(p => !p.leaveAfterRound);
+  console.log(`[LEAVE] finalized deferred count=${deferredPlayers.length} table=${table.tableId}`);
   return deferredPlayers.length;
 }
 

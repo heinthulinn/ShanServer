@@ -54,7 +54,11 @@ wss.on("connection", (ws) => {
     ws.on("close", () => {
         if (!ws.tableId || !ws.username) return;
         console.log(`❌ ${ws.username} disconnected from ${ws.tableId}`);
-        leaveTable(ws, { tableId: ws.tableId, username: ws.username, isDisconnect: true });
+        try {
+            leaveTable(ws, { tableId: ws.tableId, username: ws.username, isDisconnect: true });
+        } catch (error) {
+            console.error(`❌ leaveTable crashed on close user=${ws.username} table=${ws.tableId}`, error);
+        }
     });
 });
 

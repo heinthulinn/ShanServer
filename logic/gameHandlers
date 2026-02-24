@@ -3,6 +3,7 @@
 const { tables } = require("../state/tables");
 const { wsSend, broadcastToTable } = require("../ws/sender");
 const { resetPlayersForNextRound, resetTableState } = require("./roundReset");
+const { hardResetTable } = require("./roundReset");
 const gameFlow = require("./gameFlow");
 //const { payoutWinners } = require("./payout");
 const gameHelpers = require("./gameHelpers");
@@ -10,6 +11,35 @@ const dealerPhase = require("./dealerPhase");
 const watchPhase = require("./watchPhase");
 const drawPhase = require("./drawPhase");
 const resultPhase = require("./resultPhase");
+
+function serializeTablePlayers(table) {
+  return table.players.map(p => ({
+    seatId: p.seatId,
+    username: p.username,
+    balance: p.balance,
+    isAi: p.isAi,
+    ready: p.ready,
+    waiting: p.waiting
+  }));
+}
+
+function finalizeDeferredLeaves(table) {
+  const deferredPlayers = table.players.filter(p => p.leaveAfterRound);
+  if (deferredPlayers.length === 0) return 0;
+
+  deferredPlayers.forEach(p => {
+    if (p.ws) {
+      p.ws.tableId = null;
+      p.ws.username = null;
+    }
+    console.log(
+      `🚪 Finalized deferred leave for ${p.username} (${p.leaveReason || "manual"}) on ${table.tableId}`
+    );
+  });
+
+  table.players = table.players.filter(p => !p.leaveAfterRound);
+  return deferredPlayers.length;
+}
 
 
 function playerReady(ws, data) {
@@ -45,10 +75,10 @@ function playerReady(ws, data) {
     player.ready = true;
   
     // 🔥 FIX: Clean the broadcast here so Unity doesn't crash
-    broadcastToTable(table.tableId, { 
-      type: "table:full:update", 
-      tableId: table.tableId, 
-      gameInProgress: table.gameInProgress, 
+    broadcastToTable(table.tableId, {
+      type: "table:full:update",
+      tableId: table.tableId,
+      gameInProgress: table.gameInProgress,
       joinLocked: !!table.joinLockedForRound,
       players: table.players.map(p => ({
           seatId: p.seatId,
@@ -72,6 +102,10 @@ function handlePlayerBet(ws, data) {
   if (!table) return;
   const player = table.players.find(p => p.username === data.username);
   if (!player || player.isDealer) return;
+  if (player.leaveAfterRound) {
+    wsSend(ws, { type: "game:bet:res", success: false, error: "leave pending" });
+    return;
+  }
 
   player.currentBet = Number(data.betAmount) || 0;
   const total = table.players.reduce((sum, p) => sum + (p.currentBet || 0), 0);
@@ -83,7 +117,7 @@ function handlePlayerBet(ws, data) {
   wsSend(ws, { type: "game:bet:res", success: true });
 }
 
-function handleGameResult(ws, data) 
+function handleGameResult(ws, data)
 {
   const body = data.data || data;
   const table = tables[body.tableId];
@@ -95,9 +129,9 @@ function handleGameResult(ws, data)
   // broadcastToTable(table.tableId, { type: "table:update", tableId: table.tableId, players: table.players });
   
   // ✅ CHANGE TO THIS (Clean the players list):
-  broadcastToTable(table.tableId, { 
-      type: "table:update", 
-      tableId: table.tableId, 
+  broadcastToTable(table.tableId, {
+      type: "table:update",
+      tableId: table.tableId,
       players: table.players.map(p => ({
           username: p.username,
           balance: p.balance,
@@ -110,7 +144,7 @@ function handleGameResult(ws, data)
   wsSend(ws, { type: "game:result:res", success: true });
 }
 
-function handlePlayerDrawRequest(ws, data) 
+function handlePlayerDrawRequest(ws, data)
 {
   const { tableId, username, action } = data; // action: "draw" or "stop"
   const table = tables[tableId];
@@ -118,9 +152,13 @@ function handlePlayerDrawRequest(ws, data)
 
   const player = table.players.find(p => p.username === username);
   if (!player) return;
+  if (player.leaveAfterRound) {
+    console.log(`⛔ Ignored draw action from leaving player ${username}`);
+    return;
+  }
     // 🔥 ADD THIS LINE
   player.ws = ws;
-  player.drawAction = action; 
+  player.drawAction = action;
   console.log(`📩 [ACTION] ${username} wants to ${action}`);
 }
 
@@ -141,7 +179,24 @@ function scheduleNextRound(tableId) {
 
         // 2. WIPE the table and players (Promotes spectators to players)
         resetTableState(table);
-        resetPlayersForNextRound(table); 
+        const deferredRemoved = finalizeDeferredLeaves(table);
+        if (deferredRemoved > 0) {
+            broadcastToTable(tableId, {
+                type: "table:update",
+                tableId,
+                players: serializeTablePlayers(table)
+            });
+        }
+
+        const realPlayersLeft = table.players.filter(p => !p.isAi).length;
+        if (realPlayersLeft === 0) {
+            console.log(`🧹 No real players left on ${tableId} after deferred leaves`);
+            hardResetTable(table);
+            broadcastToTable(tableId, { type: "table:reset", tableId });
+            return;
+        }
+
+        resetPlayersForNextRound(table);
 
         // 3. RESET all state flags to "Fresh"
         table.gameInProgress = false;
@@ -188,9 +243,9 @@ function handleDealFinished(ws, data) {
     // ===============================
     if (dealerRes.points >= 8) {
 
-        broadcastToTable(tableId, { 
-            type: "game:dealer:natural", 
-            points: dealerRes.points 
+        broadcastToTable(tableId, {
+            type: "game:dealer:natural",
+            points: dealerRes.points
         });
 
         // Show peek UI first
@@ -199,7 +254,7 @@ function handleDealFinished(ws, data) {
         setTimeout(() => {
 
             // Reveal all table cards
-            broadcastToTable(tableId, { 
+            broadcastToTable(tableId, {
                 type: "table:cards:reveal",
                 players: table.players.map(p => {
                     if (!Array.isArray(p.cards) || p.cards.length < 2) {
@@ -213,7 +268,7 @@ function handleDealFinished(ws, data) {
                         };
                     }
                     // 🔥 YOU NEEDED THIS LINE BELOW:
-                    const res = gameHelpers.calculateShanResult(p.cards); 
+                    const res = gameHelpers.calculateShanResult(p.cards);
                     
                     return {
                         username: p.username,
@@ -227,9 +282,9 @@ function handleDealFinished(ws, data) {
             });
 
             // Hide peek UI
-            broadcastToTable(tableId, { 
-                type: "ui:cardview:hide", 
-                roundId 
+            broadcastToTable(tableId, {
+                type: "ui:cardview:hide",
+                roundId
             });
 
             // Directly go to result phase (NO WATCH, NO DRAW)
@@ -251,9 +306,9 @@ function handleDealFinished(ws, data) {
     // =====================================
     setTimeout(() => {
 
-        broadcastToTable(tableId, { 
-            type: "ui:cardview:show", 
-            roundId 
+        broadcastToTable(tableId, {
+            type: "ui:cardview:show",
+            roundId
         });
 
         watchPhase.startWatchTwoCardPhase(
@@ -277,11 +332,11 @@ function handleDealFinished(ws, data) {
     }, 500);
 }
 
-module.exports = { 
-    playerReady, 
-    handleGameResult, 
-    scheduleNextRound, 
-    handlePlayerBet, 
-    handleDealFinished, 
-    handlePlayerDrawRequest 
+module.exports = {
+    playerReady,
+    handleGameResult,
+    scheduleNextRound,
+    handlePlayerBet,
+    handleDealFinished,
+    handlePlayerDrawRequest
 };

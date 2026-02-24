@@ -19,6 +19,7 @@ function resetPlayersForNextRound(table) {
 
 function resetTableState(table) {
   table.gameInProgress = false;
+  table.joinLockedForRound = false;
   table.isProcessingResult = null; // 🔥 CLEAR THE LOCK HERE
   // 🔴 CLEAR TIMERS
   if (table.countdownInterval) {
@@ -73,6 +74,7 @@ function hardResetTable(table) {
 
   table.gameInProgress = false;
   table.roundInProgress = false;
+  table.joinLockedForRound = false;
   table.waitingForNextRound = false;
   table.dealAckReceived = false;
   table.watchTimerStarted = false;

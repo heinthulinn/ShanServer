@@ -127,6 +127,7 @@ function assignDealerForRound(table) {
     type: "table:full:update",
     tableId: table.tableId,
     gameInProgress: table.gameInProgress,
+    joinLocked: !!table.joinLockedForRound,
     players: table.players.map(p => ({
       seatId: p.seatId,
       username: p.username,
@@ -179,6 +180,7 @@ function startGameForTable(table) {
   
   table.roundInProgress = true; 
   table.gameInProgress = true;
+  table.joinLockedForRound = false;
   
   // 1. Check who the dealer IS before we run assignment logic
   const oldDealerName = table.currentDealerName;
@@ -213,6 +215,7 @@ function startGameForTable(table) {
       } else {
         clearInterval(table.countdownInterval);
         table.countdownInterval = null;
+        table.joinLockedForRound = true;
         broadcastToTable(table.tableId, { type: "game:countdown", seconds: 0 });
         startBettingPhase(table);
       }

@@ -8,6 +8,7 @@ function hasStaleTableState(table) {
   return Boolean(
     table.roundInProgress ||
     table.gameInProgress ||
+    table.joinLockedForRound ||
     table.waitingForNextRound ||
     table.dealAckReceived ||
     table.watchTimerStarted ||
@@ -20,6 +21,11 @@ function hasStaleTableState(table) {
     table.payoutTimer ||
     table.currentWinners?.length
   );
+}
+
+function shouldJoinAsWaiting(table) {
+  if (!table.roundInProgress) return false;
+  return !!table.joinLockedForRound;
 }
 
 function joinTable(ws, d) {
@@ -80,7 +86,7 @@ function joinTable(ws, d) {
     seatId,
     isAi: false,
     ready: false,
-    waiting: table.gameInProgress,
+    waiting: shouldJoinAsWaiting(table),
     socketId: ws._socket?.remotePort
   };
 
@@ -96,7 +102,8 @@ function joinTable(ws, d) {
       tableId: table.tableId,
       tableName: table.tableName,
       assignedSeat: seatId,
-      gameInProgress: table.gameInProgress
+      gameInProgress: table.gameInProgress,
+      joinLocked: !!table.joinLockedForRound
     }
   });
 
@@ -105,6 +112,7 @@ function joinTable(ws, d) {
     type: "table:full:update",
     tableId: table.tableId,
     gameInProgress: table.gameInProgress,
+    joinLocked: !!table.joinLockedForRound,
     players: table.players.map(p => ({
       seatId: p.seatId,
       username: p.username,

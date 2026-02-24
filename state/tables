@@ -27,6 +27,7 @@ tableTypes.forEach((t, i) => {
     maxPlayers: 6,
 
     gameInProgress: false,
+    joinLockedForRound: false,
 
     //ROUND AUTHORITY (NEW)
     roundId: 0,

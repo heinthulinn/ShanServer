@@ -26,6 +26,7 @@ function playerReady(ws, data) {
         type: "table:full:update",
         tableId: table.tableId,
         gameInProgress: table.gameInProgress,
+        joinLocked: !!table.joinLockedForRound,
         players: table.players.map(p => ({
           seatId: p.seatId,
           username: p.username,
@@ -48,6 +49,7 @@ function playerReady(ws, data) {
       type: "table:full:update", 
       tableId: table.tableId, 
       gameInProgress: table.gameInProgress, 
+      joinLocked: !!table.joinLockedForRound,
       players: table.players.map(p => ({
           seatId: p.seatId,
           username: p.username,

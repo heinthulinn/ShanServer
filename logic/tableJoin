@@ -133,6 +133,9 @@ function leaveTable(ws, d = {}) {
     return;
   }
 
+  if (targetPlayer && targetPlayer.ws) {
+    targetPlayer.ws = null;
+  }
   table.players = table.players.filter(p => p.username !== username);
 
   if (ws && ws.tableId === tableId && ws.username === username) {

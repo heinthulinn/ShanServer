@@ -54,6 +54,11 @@ wss.on("connection", (ws) => {
     ws.on("close", () => {
         if (!ws.tableId || !ws.username) return;
         console.log(`❌ ${ws.username} disconnected from ${ws.tableId}`);
+        const table = tables[ws.tableId];
+        if (table) {
+            const player = table.players.find(p => p.username === ws.username && !p.isAi);
+            if (player) player.ws = null;
+        }
         try {
             leaveTable(ws, { tableId: ws.tableId, username: ws.username, isDisconnect: true });
         } catch (error) {
@@ -123,6 +128,14 @@ function playerBet(ws, data) {
 // ===== RUN SERVER =====
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🚀 WebSocket server running on port ${PORT}`));
+
+process.on("uncaughtException", (error) => {
+    console.error("❌ uncaughtException", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+    console.error("❌ unhandledRejection", reason);
+});
 
 module.exports = {
     validateUser,

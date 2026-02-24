@@ -1,6 +1,6 @@
 // ===== watchPhase.js =====
 const { tables } = require("../state/tables");
-const { broadcastToTable, wsSend } = require("../ws/sender");
+const { broadcastToTable, safeWsSend } = require("../ws/sender");
 
 function startWatchTwoCardPhase(tableId, roundId, onComplete) {
     const table = tables[tableId];
@@ -56,11 +56,14 @@ function startWatchThreeCardPhase(tableId, roundId, onComplete) {
 
         // 🔥 SHOW CARD VIEW ONLY TO PLAYERS WITH 3 CARDS
         table.players.forEach(p => {
-            if (p.cards && p.cards.length === 3 && p.ws) {
-                p.ws.send(JSON.stringify({
+            if (p.cards && p.cards.length === 3) {
+                const sent = safeWsSend(p.ws, {
                     type: "ui:cardview:show",
                     roundId
-                }));
+                });
+                if (!sent) {
+                    console.log(`[WS] skip closed socket for seat=${p.seatId} username=${p.username} during watch3 show`);
+                }
             }
         });
 
@@ -83,11 +86,14 @@ function startWatchThreeCardPhase(tableId, roundId, onComplete) {
 
                 // 🔥 HIDE CARD VIEW ONLY FOR 3 CARD PLAYERS
                 table.players.forEach(p => {
-                    if (p.cards && p.cards.length === 3 && p.ws) {
-                        p.ws.send(JSON.stringify({
+                    if (p.cards && p.cards.length === 3) {
+                        const sent = safeWsSend(p.ws, {
                             type: "ui:cardview:hide",
                             roundId
-                        }));
+                        });
+                        if (!sent) {
+                            console.log(`[WS] skip closed socket for seat=${p.seatId} username=${p.username} during watch3 hide`);
+                        }
                     }
                 });
 

@@ -7,8 +7,19 @@ function initSender(wss) {
   wssRef = wss;
 }
 
+function safeWsSend(ws, payload) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  try {
+    ws.send(JSON.stringify(payload));
+    return true;
+  } catch (error) {
+    console.error("❌ safeWsSend failed", error);
+    return false;
+  }
+}
+
 function wsSend(ws, payload) {
-  ws.send(JSON.stringify(payload));
+  return safeWsSend(ws, payload);
 }
 
 function broadcastToTable(tableId, payload) {
@@ -19,7 +30,11 @@ function broadcastToTable(tableId, payload) {
       client.tableId === tableId &&
       client.readyState === WebSocket.OPEN
     ) {
-      client.send(JSON.stringify(payload));
+      try {
+        client.send(JSON.stringify(payload));
+      } catch (error) {
+        console.error(`❌ broadcastToTable failed table=${tableId}`, error);
+      }
     }
   });
 }
@@ -27,5 +42,6 @@ function broadcastToTable(tableId, payload) {
 module.exports = {
   initSender,
   wsSend,
+  safeWsSend,
   broadcastToTable
 };

@@ -29,6 +29,88 @@ function shouldJoinAsWaiting(table) {
   return !!table.joinLockedForRound;
 }
 
+function serializeTablePlayers(table) {
+  return table.players.map(p => ({
+    seatId: p.seatId,
+    username: p.username,
+    balance: p.balance,
+    isAi: p.isAi,
+    ready: p.ready,
+    waiting: p.waiting
+  }));
+}
+
+function leaveTable(ws, d = {}) {
+  const tableId = d.tableId || ws.tableId;
+  const username = d.username || ws.username;
+  const isDisconnect = !!d.isDisconnect;
+
+  if (!tableId || !username) {
+    if (!isDisconnect) {
+      wsSend(ws, {
+        type: "tables:leave:res",
+        success: false,
+        error: "Missing tableId or username"
+      });
+    }
+    return;
+  }
+
+  const table = tables[tableId];
+  if (!table) {
+    if (!isDisconnect) {
+      wsSend(ws, {
+        type: "tables:leave:res",
+        success: false,
+        tableId,
+        error: "Table not found"
+      });
+    }
+    return;
+  }
+
+  const hadPlayer = table.players.some(p => p.username === username && !p.isAi);
+  table.players = table.players.filter(p => p.username !== username);
+
+  if (ws && ws.tableId === tableId && ws.username === username) {
+    ws.tableId = null;
+    ws.username = null;
+  }
+
+  if (!hadPlayer && !isDisconnect) {
+    wsSend(ws, {
+      type: "tables:leave:res",
+      success: false,
+      tableId,
+      error: "User not at this table"
+    });
+    return;
+  }
+
+  if (table.players.filter(p => !p.isAi).length === 0) {
+    console.log(`🧹 Table ${tableId} empty → clearing AI & resetting state`);
+    hardResetTable(table);
+    broadcastToTable(tableId, {
+      type: "table:reset",
+      tableId
+    });
+  }
+
+  broadcastToTable(tableId, {
+    type: "table:update",
+    tableId,
+    players: serializeTablePlayers(table)
+  });
+
+  if (!isDisconnect) {
+    wsSend(ws, {
+      type: "tables:leave:res",
+      success: true,
+      tableId
+    });
+  }
+}
+
 function joinTable(ws, d) {
   const u = validUsers.find(x => x.username === d.username);
   if (!u) {
@@ -132,15 +214,8 @@ function joinTable(ws, d) {
   broadcastToTable(table.tableId, {
     type: "table:update",
     tableId: table.tableId,
-    players: table.players.map(p => ({
-      seatId: p.seatId,
-      username: p.username,
-      balance: p.balance,
-      isAi: p.isAi,
-      ready: p.ready,
-      waiting: p.waiting
-    }))
+    players: serializeTablePlayers(table)
   });
 }
 
-module.exports = { joinTable };
+module.exports = { joinTable, leaveTable };

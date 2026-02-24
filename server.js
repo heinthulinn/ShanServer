@@ -13,7 +13,7 @@ const { tableTypes, tables } = require("./state/tables");
 const { assignBaseAiFirst, getAvailableSeat } = require("./logic/tableHelpers");
 const gameFlow = require("./logic/gameFlow");
 const { startGame } = require("./logic/startGame");
-const { hardResetTable } = require("./logic/roundReset");
+const { leaveTable } = require("./logic/tableJoin");
 const { playerReady, handleGameResult } = require("./logic/gameHandlers");
 
 // Hand evaluation / helpers
@@ -53,30 +53,8 @@ wss.on("connection", (ws) => {
 
     ws.on("close", () => {
         if (!ws.tableId || !ws.username) return;
-
-        const table = tables[ws.tableId];
-        if (!table) return;
-
         console.log(`❌ ${ws.username} disconnected from ${ws.tableId}`);
-
-        table.players = table.players.filter(p => p.username !== ws.username);
-
-        // Clean table if no real players left
-        if (table.players.filter(p => !p.isAi).length === 0) {
-            console.log(`🧹 Table ${ws.tableId} empty → clearing AI & resetting state`);
-            hardResetTable(table);
-
-            broadcastToTable(ws.tableId, {
-                type: "table:reset",
-                tableId: ws.tableId
-            });
-        }
-
-        broadcastToTable(ws.tableId, {
-            type: "table:update",
-            tableId: ws.tableId,
-            players: table.players
-        });
+        leaveTable(ws, { tableId: ws.tableId, username: ws.username, isDisconnect: true });
     });
 });
 

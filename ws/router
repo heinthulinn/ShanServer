@@ -8,7 +8,7 @@ const { assignBaseAiFirst } = require("../logic/tableHelpers");
 const { playerReady, handleGameResult,handlePlayerBet,handleDealFinished,scheduleNextRound,handlePlayerDrawRequest } = require("../logic/gameHandlers");
 const gameFlow = require("../logic/gameFlow");
 const resultPhase = require("../logic/resultPhase");
-const { joinTable } = require("../logic/tableJoin");
+const { joinTable, leaveTable } = require("../logic/tableJoin");
 const { handleSocialGift } = require("../social/giftHandler");
 const { handlePlayerMessage } = require("../social/messageHandler");
 const { handleSocialEmoji } = require("../social/emojiHandler");
@@ -49,6 +49,9 @@ function handleWsMessage(ws, raw) {
 
     case "tables:join":
       return joinTable(ws, data);
+
+    case "tables:leave":
+      return leaveTable(ws, data);
 
     case "player:ready":
       return playerReady(ws, data);

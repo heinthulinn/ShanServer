@@ -32,6 +32,7 @@ function finalizeDeferredLeaves(table) {
       p.ws.tableId = null;
       p.ws.username = null;
     }
+    p.ws = null;
     console.log(
       `🚪 Finalized deferred leave for ${p.username} (${p.leaveReason || "manual"}) on ${table.tableId}`
     );

@@ -262,9 +262,36 @@ function joinTable(ws, d) {
 
     alreadyJoined.ws = ws;
     alreadyJoined.socketId = ws._socket?.remotePort;
-    alreadyJoined.leaveAfterRound = false;
-    alreadyJoined.leaveReason = null;
-    alreadyJoined.leaveRequestedAt = null;
+
+    const reconnectingDeferredDisconnect =
+      alreadyJoined.leaveAfterRound === true &&
+      alreadyJoined.leaveReason === "disconnect";
+
+    if (reconnectingDeferredDisconnect) {
+      const shouldWaitNextRound = table.roundInProgress && table.joinLockedForRound;
+
+      if (shouldWaitNextRound) {
+        alreadyJoined.waiting = true;
+        alreadyJoined.ready = false;
+        alreadyJoined.currentBet = 0;
+        alreadyJoined.drawAction = null;
+        delete alreadyJoined.cards;
+        delete alreadyJoined.hand;
+        alreadyJoined.hasDrawn = false;
+        console.log(
+          `[REJOIN_POLICY] rejoin_mode=wait_next_round user=${u.username} table=${table.tableId} roundInProgress=${table.roundInProgress} joinLocked=${table.joinLockedForRound}`
+        );
+      } else {
+        alreadyJoined.waiting = false;
+        console.log(
+          `[REJOIN_POLICY] rejoin_mode=current_round user=${u.username} table=${table.tableId} roundInProgress=${table.roundInProgress} joinLocked=${table.joinLockedForRound}`
+        );
+      }
+
+      alreadyJoined.leaveAfterRound = false;
+      alreadyJoined.leaveReason = null;
+      alreadyJoined.leaveRequestedAt = null;
+    }
 
     ws.tableId = table.tableId;
     ws.username = u.username;

@@ -5,6 +5,7 @@ const { wsSend, broadcastToTable } = require("../ws/sender");
 const { resetPlayersForNextRound, resetTableState } = require("./roundReset");
 const { hardResetTable } = require("./roundReset");
 const gameFlow = require("./gameFlow");
+const WebSocket = require("ws");
 //const { payoutWinners } = require("./payout");
 const gameHelpers = require("./gameHelpers");
 const dealerPhase = require("./dealerPhase");
@@ -50,6 +51,52 @@ function finalizeDeferredLeaves(table) {
   table.players = table.players.filter(p => !p.leaveAfterRound);
   console.log(`[LEAVE] finalized deferred count=${deferredPlayers.length} table=${table.tableId}`);
   return deferredPlayers.length;
+}
+
+function pruneDisconnectedRealPlayersBeforeNextRound(table) {
+  if (!table) return { removedCount: 0, removedUsers: [] };
+
+  console.log(
+    `[PRUNE] pre-round start table=${table.tableId} roundInProgress=${table.roundInProgress} joinLocked=${table.joinLockedForRound}`
+  );
+
+  const removedUsers = [];
+  const survivors = [];
+
+  table.players.forEach((player) => {
+    if (player.isAi) {
+      survivors.push(player);
+      return;
+    }
+
+    let reason = "";
+    if (player.leaveAfterRound && player.leaveReason === "disconnect") {
+      reason = "disconnect_deferred";
+    } else if (!player.ws) {
+      reason = "no_ws";
+    } else if (player.ws.readyState !== WebSocket.OPEN) {
+      reason = "ws_not_open";
+    }
+
+    if (!reason) {
+      survivors.push(player);
+      return;
+    }
+
+    if (player.ws) {
+      player.ws.tableId = null;
+      player.ws.username = null;
+      player.ws = null;
+    }
+    removedUsers.push(`${player.username}:${reason}`);
+    console.log(`[PRUNE] kick user=${player.username} table=${table.tableId} reason=${reason}`);
+  });
+
+  table.players = survivors;
+  console.log(
+    `[PRUNE] summary table=${table.tableId} removed=${removedUsers.length} remaining_real=${table.players.filter(p => !p.isAi).length}`
+  );
+  return { removedCount: removedUsers.length, removedUsers };
 }
 
 
@@ -201,9 +248,18 @@ function scheduleNextRound(tableId) {
             });
         }
 
+        const pruneResult = pruneDisconnectedRealPlayersBeforeNextRound(table);
+        if (pruneResult.removedCount > 0) {
+            broadcastToTable(tableId, {
+                type: "table:update",
+                tableId,
+                players: serializeTablePlayers(table)
+            });
+        }
+
         const realPlayersLeft = table.players.filter(p => !p.isAi).length;
         if (realPlayersLeft === 0) {
-            console.log(`🧹 No real players left on ${tableId} after deferred leaves`);
+            console.log(`🧹 No real players left on ${tableId} after pre-round prune`);
             hardResetTable(table);
             broadcastToTable(tableId, { type: "table:reset", tableId });
             return;

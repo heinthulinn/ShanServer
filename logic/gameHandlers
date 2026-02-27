@@ -23,6 +23,15 @@ function serializeTablePlayers(table) {
   }));
 }
 
+function clearDealAckTimer(table) {
+  if (!table) return;
+  if (table.dealAckTimer) {
+    clearTimeout(table.dealAckTimer);
+    table.dealAckTimer = null;
+  }
+  table.dealAckDeadlineAt = null;
+}
+
 function finalizeDeferredLeaves(table) {
   const deferredPlayers = table.players.filter(p => p.leaveAfterRound);
   if (deferredPlayers.length === 0) return 0;
@@ -174,10 +183,12 @@ function scheduleNextRound(tableId) {
 
     setTimeout(() => {
         // 1. FORCE CLEAR all timers so they don't overlap
-        [table.countdownInterval, table.betInterval, table.watchTimer, table.findWinnerTimer, table.payoutTimer].forEach(t => {
+        [table.countdownInterval, table.betInterval, table.watchTimer, table.findWinnerTimer, table.payoutTimer, table.dealAckTimer].forEach(t => {
             if (t) clearInterval(t);
+            if (t) clearTimeout(t);
         });
-        table.countdownInterval = table.betInterval = table.watchTimer = table.findWinnerTimer = table.payoutTimer = null;
+        table.countdownInterval = table.betInterval = table.watchTimer = table.findWinnerTimer = table.payoutTimer = table.dealAckTimer = null;
+        table.dealAckDeadlineAt = null;
 
         // 2. WIPE the table and players (Promotes spectators to players)
         resetTableState(table);
@@ -226,37 +237,35 @@ const mapCardsToStrings = (cards) => {
     const suitMap = { 4: "S", 3: "H", 2: "D", 1: "C" };
     return cards.map(c => typeof c === 'string' ? c : `${c.rank}${suitMap[c.suit]}`);
 };
-    
-function handleDealFinished(ws, data) {
-    const { tableId, roundId } = data;
-    const table = tables[tableId];
-    if (!table || roundId !== table.roundId || table.dealAckReceived) return;
+
+function advanceAfterDealAck(table, roundId, source) {
+    if (!table || roundId !== table.roundId) return false;
+    if (table.dealAckReceived) {
+        console.log(`⛔ DEAL ACK duplicate ignored | table=${table.tableId} round=${roundId} source=${source}`);
+        return false;
+    }
 
     table.dealAckReceived = true;
+    clearDealAckTimer(table);
+    console.log(`✅ DEAL ACK accepted | table=${table.tableId} round=${roundId} source=${source}`);
 
     const dealer = table.players.find(p => p.isDealer);
     if (!dealer || !Array.isArray(dealer.cards) || dealer.cards.length < 2) {
-        return; // safety exit
+        console.warn(`⚠️ DEAL ACK flow aborted: missing dealer/cards | table=${table.tableId} round=${roundId}`);
+        return false;
     }
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
 
-    // ===============================
-    // 🔥 DEALER NATURAL (8 or 9)
-    // ===============================
     if (dealerRes.points >= 8) {
-
-        broadcastToTable(tableId, {
+        broadcastToTable(table.tableId, {
             type: "game:dealer:natural",
             points: dealerRes.points
         });
 
-        // Show peek UI first
-        broadcastToTable(tableId, { type: "ui:cardview:show", roundId});
+        broadcastToTable(table.tableId, { type: "ui:cardview:show", roundId });
 
         setTimeout(() => {
-
-            // Reveal all table cards
-            broadcastToTable(tableId, {
+            broadcastToTable(table.tableId, {
                 type: "table:cards:reveal",
                 players: table.players.map(p => {
                     if (!Array.isArray(p.cards) || p.cards.length < 2) {
@@ -269,69 +278,90 @@ function handleDealFinished(ws, data) {
                             isShan: false
                         };
                     }
-                    // 🔥 YOU NEEDED THIS LINE BELOW:
                     const res = gameHelpers.calculateShanResult(p.cards);
-                    
+
                     return {
                         username: p.username,
                         seatId: p.seatId,
                         cards: mapCardsToStrings(p.cards),
-                        points: res.points,      // Now 'res' is defined!
+                        points: res.points,
                         multiplier: res.multiplier,
                         isShan: res.isDo
                     };
                 })
             });
 
-            // Hide peek UI
-            broadcastToTable(tableId, {
+            broadcastToTable(table.tableId, {
                 type: "ui:cardview:hide",
                 roundId
             });
 
-            // Directly go to result phase (NO WATCH, NO DRAW)
             setTimeout(() => {
                 resultPhase.startFindWinnerPhase(
-                    tableId,
+                    table.tableId,
                     roundId,
                     scheduleNextRound
                 );
             }, 2000);
-
         }, 1500);
 
-        return;
+        return true;
     }
 
-    // =====================================
-    // 🔵 NORMAL FLOW (Dealer < 8)
-    // =====================================
     setTimeout(() => {
-
-        broadcastToTable(tableId, {
+        broadcastToTable(table.tableId, {
             type: "ui:cardview:show",
             roundId
         });
 
         watchPhase.startWatchTwoCardPhase(
-            tableId,
+            table.tableId,
             roundId,
             () => {
                 drawPhase.processFinalDraws(
-                    tableId,
+                    table.tableId,
                     roundId,
-                    (tableId, roundId) => {
+                    (innerTableId, innerRoundId) => {
                         resultPhase.startFindWinnerPhase(
-                            tableId,
-                            roundId,
+                            innerTableId,
+                            innerRoundId,
                             scheduleNextRound
                         );
                     }
                 );
             }
         );
-
     }, 500);
+
+    return true;
+}
+
+function recoverDealAckTimeout(tableId, roundId) {
+    const table = tables[tableId];
+    if (!table) return;
+    if (roundId !== table.roundId) {
+        console.log(`⛔ DEAL ACK timeout ignored (round changed) | table=${tableId} timerRound=${roundId} liveRound=${table.roundId}`);
+        return;
+    }
+    if (table.dealAckReceived) {
+        console.log(`⛔ DEAL ACK timeout ignored (already acked) | table=${tableId} round=${roundId}`);
+        return;
+    }
+
+    console.warn(`🛟 DEAL ACK timeout recovery | table=${tableId} round=${roundId}`);
+    broadcastToTable(tableId, { type: "game:deal:recover", tableId, roundId });
+    advanceAfterDealAck(table, roundId, "timeout-recovery");
+}
+
+function handleDealFinished(ws, data) {
+    const { tableId, roundId } = data;
+    const table = tables[tableId];
+    if (!table || roundId !== table.roundId) return;
+    if (table.dealAckReceived) {
+        console.log(`⛔ Late/duplicate client deal ACK ignored | table=${tableId} round=${roundId}`);
+        return;
+    }
+    advanceAfterDealAck(table, roundId, "client-ack");
 }
 
 module.exports = {
@@ -340,5 +370,6 @@ module.exports = {
     scheduleNextRound,
     handlePlayerBet,
     handleDealFinished,
-    handlePlayerDrawRequest
+    handlePlayerDrawRequest,
+    recoverDealAckTimeout
 };

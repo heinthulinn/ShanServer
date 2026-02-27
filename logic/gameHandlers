@@ -3,9 +3,12 @@
 const { tables } = require("../state/tables");
 const { wsSend, broadcastToTable } = require("../ws/sender");
 const { resetPlayersForNextRound, resetTableState } = require("./roundReset");
-const { hardResetTable } = require("./roundReset");
 const gameFlow = require("./gameFlow");
 const WebSocket = require("ws");
+const {
+  abortRoundIfNoConnectedRealPlayers,
+  isRoundContextValid
+} = require("./roundSafety");
 //const { payoutWinners } = require("./payout");
 const gameHelpers = require("./gameHelpers");
 const dealerPhase = require("./dealerPhase");
@@ -133,10 +136,10 @@ function playerReady(ws, data) {
     player.ready = true;
   
     // 🔥 FIX: Clean the broadcast here so Unity doesn't crash
-    broadcastToTable(table.tableId, {
-      type: "table:full:update",
-      tableId: table.tableId,
-      gameInProgress: table.gameInProgress,
+    broadcastToTable(table.tableId, { 
+      type: "table:full:update", 
+      tableId: table.tableId, 
+      gameInProgress: table.gameInProgress, 
       joinLocked: !!table.joinLockedForRound,
       players: table.players.map(p => ({
           seatId: p.seatId,
@@ -175,7 +178,7 @@ function handlePlayerBet(ws, data) {
   wsSend(ws, { type: "game:bet:res", success: true });
 }
 
-function handleGameResult(ws, data)
+function handleGameResult(ws, data) 
 {
   const body = data.data || data;
   const table = tables[body.tableId];
@@ -187,9 +190,9 @@ function handleGameResult(ws, data)
   // broadcastToTable(table.tableId, { type: "table:update", tableId: table.tableId, players: table.players });
   
   // ✅ CHANGE TO THIS (Clean the players list):
-  broadcastToTable(table.tableId, {
-      type: "table:update",
-      tableId: table.tableId,
+  broadcastToTable(table.tableId, { 
+      type: "table:update", 
+      tableId: table.tableId, 
       players: table.players.map(p => ({
           username: p.username,
           balance: p.balance,
@@ -202,7 +205,7 @@ function handleGameResult(ws, data)
   wsSend(ws, { type: "game:result:res", success: true });
 }
 
-function handlePlayerDrawRequest(ws, data)
+function handlePlayerDrawRequest(ws, data) 
 {
   const { tableId, username, action } = data; // action: "draw" or "stop"
   const table = tables[tableId];
@@ -216,7 +219,7 @@ function handlePlayerDrawRequest(ws, data)
   }
     // 🔥 ADD THIS LINE
   player.ws = ws;
-  player.drawAction = action;
+  player.drawAction = action; 
   console.log(`📩 [ACTION] ${username} wants to ${action}`);
 }
 
@@ -224,11 +227,18 @@ function scheduleNextRound(tableId) {
     const table = tables[tableId];
     // 🔥 STOP! If we are already waiting to restart, don't run this again.
     if (!table || table.waitingForNextRound) return;
+    if (abortRoundIfNoConnectedRealPlayers(table, "scheduleNextRound:entry")) return;
     
     table.waitingForNextRound = true;
     console.log(`⏳ Round over. Cleaning table ${tableId}...`);
+    const scheduledRoundId = table.roundId;
+    const scheduledToken = Number(table.roundAbortToken) || 0;
 
     setTimeout(() => {
+        if (!isRoundContextValid(table, scheduledRoundId, scheduledToken, "schedule-next-round")) {
+            return;
+        }
+
         // 1. FORCE CLEAR all timers so they don't overlap
         [table.countdownInterval, table.betInterval, table.watchTimer, table.findWinnerTimer, table.payoutTimer, table.dealAckTimer].forEach(t => {
             if (t) clearInterval(t);
@@ -259,13 +269,12 @@ function scheduleNextRound(tableId) {
 
         const realPlayersLeft = table.players.filter(p => !p.isAi).length;
         if (realPlayersLeft === 0) {
-            console.log(`🧹 No real players left on ${tableId} after pre-round prune`);
-            hardResetTable(table);
-            broadcastToTable(tableId, { type: "table:reset", tableId });
+            console.log(`🧹 No real players left on ${tableId} after pre-round prune (pre_round_prune_no_real)`);
+            abortRoundIfNoConnectedRealPlayers(table, "pre_round_prune_no_real");
             return;
         }
 
-        resetPlayersForNextRound(table);
+        resetPlayersForNextRound(table); 
 
         // 3. RESET all state flags to "Fresh"
         table.gameInProgress = false;
@@ -296,10 +305,14 @@ const mapCardsToStrings = (cards) => {
 
 function advanceAfterDealAck(table, roundId, source) {
     if (!table || roundId !== table.roundId) return false;
+    if (abortRoundIfNoConnectedRealPlayers(table, `advanceAfterDealAck:${source}`)) {
+        return false;
+    }
     if (table.dealAckReceived) {
         console.log(`⛔ DEAL ACK duplicate ignored | table=${table.tableId} round=${roundId} source=${source}`);
         return false;
     }
+    const phaseToken = Number(table.roundAbortToken) || 0;
 
     table.dealAckReceived = true;
     clearDealAckTimer(table);
@@ -321,6 +334,9 @@ function advanceAfterDealAck(table, roundId, source) {
         broadcastToTable(table.tableId, { type: "ui:cardview:show", roundId });
 
         setTimeout(() => {
+            if (!isRoundContextValid(table, roundId, phaseToken, "deal-ack-natural-reveal")) {
+                return;
+            }
             broadcastToTable(table.tableId, {
                 type: "table:cards:reveal",
                 players: table.players.map(p => {
@@ -353,6 +369,9 @@ function advanceAfterDealAck(table, roundId, source) {
             });
 
             setTimeout(() => {
+                if (!isRoundContextValid(table, roundId, phaseToken, "deal-ack-natural-result")) {
+                    return;
+                }
                 resultPhase.startFindWinnerPhase(
                     table.tableId,
                     roundId,
@@ -365,6 +384,9 @@ function advanceAfterDealAck(table, roundId, source) {
     }
 
     setTimeout(() => {
+        if (!isRoundContextValid(table, roundId, phaseToken, "deal-ack-watch2-start")) {
+            return;
+        }
         broadcastToTable(table.tableId, {
             type: "ui:cardview:show",
             roundId
@@ -395,6 +417,7 @@ function advanceAfterDealAck(table, roundId, source) {
 function recoverDealAckTimeout(tableId, roundId) {
     const table = tables[tableId];
     if (!table) return;
+    if (abortRoundIfNoConnectedRealPlayers(table, "recoverDealAckTimeout")) return;
     if (roundId !== table.roundId) {
         console.log(`⛔ DEAL ACK timeout ignored (round changed) | table=${tableId} timerRound=${roundId} liveRound=${table.roundId}`);
         return;
@@ -413,6 +436,7 @@ function handleDealFinished(ws, data) {
     const { tableId, roundId } = data;
     const table = tables[tableId];
     if (!table || roundId !== table.roundId) return;
+    if (abortRoundIfNoConnectedRealPlayers(table, "handleDealFinished")) return;
     if (table.dealAckReceived) {
         console.log(`⛔ Late/duplicate client deal ACK ignored | table=${tableId} round=${roundId}`);
         return;
@@ -420,12 +444,12 @@ function handleDealFinished(ws, data) {
     advanceAfterDealAck(table, roundId, "client-ack");
 }
 
-module.exports = {
-    playerReady,
-    handleGameResult,
-    scheduleNextRound,
-    handlePlayerBet,
-    handleDealFinished,
+module.exports = { 
+    playerReady, 
+    handleGameResult, 
+    scheduleNextRound, 
+    handlePlayerBet, 
+    handleDealFinished, 
     handlePlayerDrawRequest,
     recoverDealAckTimeout
 };

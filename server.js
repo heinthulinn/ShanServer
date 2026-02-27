@@ -14,6 +14,7 @@ const { assignBaseAiFirst, getAvailableSeat } = require("./logic/tableHelpers");
 const gameFlow = require("./logic/gameFlow");
 const { startGame } = require("./logic/startGame");
 const { leaveTable } = require("./logic/tableJoin");
+const { hardResetTable } = require("./logic/roundReset");
 const { playerReady, handleGameResult } = require("./logic/gameHandlers");
 
 // Hand evaluation / helpers
@@ -36,12 +37,62 @@ initSender(wss);
 
 // ===== GLOBAL RTP CONFIG =====
 const tablesRTP = {};
+let nextSessionId = 1;
+
+function hasStaleTableState(table) {
+    return Boolean(
+        table.roundInProgress ||
+        table.gameInProgress ||
+        table.joinLockedForRound ||
+        table.waitingForNextRound ||
+        table.dealAckReceived ||
+        table.watchTimerStarted ||
+        table.isProcessingResult ||
+        table.autoStartCalled ||
+        table.countdownInterval ||
+        table.betInterval ||
+        table.watchTimer ||
+        table.findWinnerTimer ||
+        table.payoutTimer ||
+        table.currentWinners?.length
+    );
+}
+
+function cleanupConnection(ws, reason) {
+    if (!ws || ws._cleanedUp) return;
+    ws._cleanedUp = true;
+
+    const tableId = ws.tableId;
+    const username = ws.username;
+
+    if (tableId && username) {
+        console.log(`❌ ${username} disconnected from ${tableId} (${reason})`);
+        const table = tables[tableId];
+        if (table) {
+            const player = table.players.find(p => p.username === username && !p.isAi);
+            if (player) player.ws = null;
+        }
+        try {
+            leaveTable(ws, { tableId, username, isDisconnect: true });
+        } catch (error) {
+            console.error(`❌ leaveTable crashed on ${reason} user=${username} table=${tableId}`, error);
+        }
+    }
+
+    ws.tableId = null;
+    ws.username = null;
+    ws.isAlive = false;
+}
 
 // =========================
 // WEBSOCKET CONNECTION
 // =========================
 wss.on("connection", (ws) => {
     console.log("🔌 WebSocket client connected!");
+    ws.sessionId = nextSessionId++;
+    ws.isAlive = true;
+    ws.lastPongAt = Date.now();
+    ws._cleanedUp = false;
 
     ws.send(JSON.stringify({ type: "connected", message: "Welcome!" }));
 
@@ -51,21 +102,64 @@ wss.on("connection", (ws) => {
         handleWsMessage(ws, msg);
     });
 
+    ws.on("pong", () => {
+        ws.isAlive = true;
+        ws.lastPongAt = Date.now();
+    });
+
     ws.on("close", () => {
-        if (!ws.tableId || !ws.username) return;
-        console.log(`❌ ${ws.username} disconnected from ${ws.tableId}`);
-        const table = tables[ws.tableId];
-        if (table) {
-            const player = table.players.find(p => p.username === ws.username && !p.isAi);
-            if (player) player.ws = null;
-        }
-        try {
-            leaveTable(ws, { tableId: ws.tableId, username: ws.username, isDisconnect: true });
-        } catch (error) {
-            console.error(`❌ leaveTable crashed on close user=${ws.username} table=${ws.tableId}`, error);
-        }
+        cleanupConnection(ws, "close");
+    });
+
+    ws.on("error", (error) => {
+        console.error(`❌ WebSocket error session=${ws.sessionId}`, error);
+        cleanupConnection(ws, "error");
     });
 });
+
+const HEARTBEAT_INTERVAL_MS = 15000;
+const heartbeatInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+        if (!ws || ws._cleanedUp) return;
+        if (ws.isAlive === false) {
+            cleanupConnection(ws, "heartbeat-timeout");
+            try {
+                ws.terminate();
+            } catch (error) {
+                console.error(`❌ ws terminate failed session=${ws.sessionId}`, error);
+            }
+            return;
+        }
+
+        ws.isAlive = false;
+        try {
+            ws.ping();
+        } catch (error) {
+            console.error(`❌ ws ping failed session=${ws.sessionId}`, error);
+            cleanupConnection(ws, "heartbeat-ping-failed");
+            try {
+                ws.terminate();
+            } catch (terminateError) {
+                console.error(`❌ ws terminate failed session=${ws.sessionId}`, terminateError);
+            }
+        }
+    });
+}, HEARTBEAT_INTERVAL_MS);
+
+const ZOMBIE_SWEEP_INTERVAL_MS = 30000;
+const zombieTableSweepInterval = setInterval(() => {
+    Object.values(tables).forEach((table) => {
+        const realPlayers = table.players.filter(p => !p.isAi).length;
+        if (realPlayers === 0 && hasStaleTableState(table)) {
+            console.log(`🧹 Zombie sweep reset for ${table.tableId}`);
+            hardResetTable(table);
+            broadcastToTable(table.tableId, {
+                type: "table:reset",
+                tableId: table.tableId
+            });
+        }
+    });
+}, ZOMBIE_SWEEP_INTERVAL_MS);
 
 // =========================
 // WS HELPER FUNCTIONS
@@ -136,6 +230,15 @@ process.on("uncaughtException", (error) => {
 process.on("unhandledRejection", (reason) => {
     console.error("❌ unhandledRejection", reason);
 });
+
+function stopBackgroundIntervals() {
+    clearInterval(heartbeatInterval);
+    clearInterval(zombieTableSweepInterval);
+}
+
+process.on("SIGINT", stopBackgroundIntervals);
+process.on("SIGTERM", stopBackgroundIntervals);
+process.on("exit", stopBackgroundIntervals);
 
 module.exports = {
     validateUser,

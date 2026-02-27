@@ -1,6 +1,8 @@
 // ===== startGame.js =====
 const { tables } = require("../state/tables");
 const { broadcastToTable } = require("../ws/sender");
+const { hardResetTable } = require("./roundReset");
+const WebSocket = require("ws");
 const { targetRTP } = require("../config/rtp");
 const { createDeck, shuffle } = require("./dealCards");
 const { evaluateRTP } = require("./rtp");
@@ -23,6 +25,16 @@ function startGame(ws, data) {
     const tableId = (data && data.tableId) ? data.tableId : data;
     const table = tables[tableId];
     if (!table) return;
+
+    const connectedRealPlayers = table.players.filter(
+        p => !p.isAi && p.ws && p.ws.readyState === WebSocket.OPEN
+    );
+    if (connectedRealPlayers.length === 0) {
+        console.warn(`🛑 startGame aborted: no connected real players | table=${tableId}`);
+        hardResetTable(table);
+        broadcastToTable(tableId, { type: "table:reset", tableId });
+        return;
+    }
 
    // ✅ NO MORE DEDUCTION HERE.
     // It was already handled in gameFlow.assignDealerForRound

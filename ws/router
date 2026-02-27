@@ -1,0 +1,147 @@
+//======router.js==============
+const { wsSend, broadcastToTable } = require("./sender");
+
+const { tables } = require("../state/tables");
+const { validUsers, aiPlayersList } = require("../state/users");
+
+const { assignBaseAiFirst } = require("../logic/tableHelpers");
+const { playerReady, handleGameResult,handlePlayerBet,handleDealFinished,scheduleNextRound,handlePlayerDrawRequest } = require("../logic/gameHandlers");
+const gameFlow = require("../logic/gameFlow");
+const resultPhase = require("../logic/resultPhase");
+const { joinTable, leaveTable } = require("../logic/tableJoin");
+const { handleSocialGift } = require("../social/giftHandler");
+const { handlePlayerMessage } = require("../social/messageHandler");
+const { handleSocialEmoji } = require("../social/emojiHandler");
+const dealerPhase = require("../logic/dealerPhase");
+
+
+function handleWsMessage(ws, raw) {
+  const text = raw.toString();
+
+  // ignore non-json
+  if (!text.startsWith("{")) {
+    console.log("⚠ Ignored non-JSON message:", text);
+    return;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    console.log("❌ Invalid JSON:", text);
+    return;
+  }
+
+  try {
+    switch (data.type) {
+
+      case "user:validate":
+        return validateUser(ws, data);
+
+      case "user:balance":
+      case "user:balance:check":
+        return checkBalance(ws, data);
+
+      case "ai:players:list":
+        return wsSend(ws, {type: "ai:players:list:res", result: aiPlayersList});
+
+      case "tables:list":
+        return sendTableList(ws);
+
+      case "tables:join":
+        return joinTable(ws, data);
+
+      case "tables:leave":
+        return leaveTable(ws, data);
+
+      case "player:ready":
+        return playerReady(ws, data);
+      
+      case "game:bet":
+        return handlePlayerBet(ws, data);
+
+      case "game:deal:finished":
+        return handleDealFinished(ws, data);
+        
+      case "game:player:draw:request":
+        return handlePlayerDrawRequest(ws, data);
+
+      case "game:dealer:decision":
+        console.log("🎯 Routing Dealer Decision to resultPhase");
+        return dealerPhase.handleDealerDecision(ws,data,(tableId, roundId) => resultPhase.startFindWinnerPhase(tableId, roundId, scheduleNextRound));
+
+      case "game:result":
+        return handleGameResult(ws, data);
+
+      case "game:restart":
+        return scheduleNextRound(data.tableId);
+
+      case "social:gift":
+      return handleSocialGift(ws, data);
+
+      case "social:message":
+        return handlePlayerMessage(ws, data);
+      
+      case "social:emoji":
+        return handleSocialEmoji(ws, data);
+    
+      default:
+        console.log("⚠ Unknown message type:", data.type);
+    }
+  } catch (error) {
+    console.error(`❌ Handler error for type=${data.type}`, error);
+    try {
+      wsSend(ws, { type: "error", message: "internal handler error" });
+    } catch (sendError) {
+      console.error("❌ Failed to send handler error response", sendError);
+    }
+  }
+}
+
+/* ---------------- HELPERS ---------------- */
+
+function validateUser(ws, d) {
+  const u = validUsers.find(
+    x => x.username === d.username && x.token === d.token
+  );
+
+  wsSend(ws, {
+    type: "user:validate:res",
+    success: !!u,
+    result: u || null,
+    error: u ? "" : "Invalid user or token"
+  });
+}
+
+function checkBalance(ws, d) {
+  const u = validUsers.find(x => x.username === d.username);
+
+  wsSend(ws, {
+    type: "user:balance:res",
+    balance: u ? u.balance : 0,
+    error: u ? "" : "User not found"
+  });
+}
+
+function sendTableList(ws) {
+  const list = Object.values(tables).map(t => ({
+    tableId: t.tableId,
+    tableName: t.tableName,
+    minBuyIn: t.minBuyIn,
+    maxBuyIn: t.maxBuyIn,
+    defaultBet: t.defaultBet,
+    currentPlayers: t.players.length,
+    maxPlayers: t.maxPlayers
+  }));
+
+  wsSend(ws, {
+    type: "tables:list:res",
+    result: list
+  });
+}
+
+/* joinTable stays same logic as before – just moved here */
+
+module.exports = {
+  handleWsMessage
+};

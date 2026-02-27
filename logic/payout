@@ -1,0 +1,143 @@
+// ===== payout.js =====
+
+/**
+ * Collects bets from players at the start of the round.
+ * Banker (Dealer) is excluded from paying a bet.
+ */
+function collectBets(players) {
+  players.forEach(p => {
+    if (p.isDealer) {
+      p.currentBet = 0;
+      return;
+    }
+
+    p.currentBet = Number(p.currentBet) || 0;
+
+    if (p.balance >= p.currentBet) {
+      p.balance -= p.currentBet;
+    } else {
+      // All-in
+      p.currentBet = p.balance;
+      p.balance = 0;
+    }
+  });
+}
+
+/**
+ * Payout winners and losers
+ * Dealer multiplier applies when dealer wins
+ * Player multiplier applies when player wins
+ */
+function payoutWinners(table, players, winners) {
+  const dealer = players.find(p => p.isDealer);
+  if (!dealer) {
+    console.warn("⚠️ No dealer found! Cannot payout.");
+    return [];
+  }
+
+  const initialFund = dealer.bankerFund || 0;
+
+  // Safety: remove undefined values
+  const winnerNames = new Set((winners || []).filter(Boolean));
+
+  const results = [];
+  let dealerDelta = 0;
+
+  players.forEach(p => {
+    if (!p || p.isDealer || p.waiting) return;
+
+    const bet = p.currentBet || 0;
+    if (bet <= 0) return;
+
+    let totalStake = 0;
+    let delta = 0;
+
+    if (winnerNames.has(p.username)) {
+      // ✅ PLAYER WINS → dealer pays using PLAYER multiplier
+      const playerMultiplier = p.multiplier || 1;
+      totalStake = bet * playerMultiplier;
+
+      delta = totalStake;
+
+      // Return bet + profit
+      p.balance += bet + totalStake;
+
+      dealerDelta -= totalStake;
+
+      console.log(
+        `💵 WIN → ${p.username} | Bet:${bet} | x${playerMultiplier} | Dealer pays:${totalStake}`
+      );
+
+      results.push({
+        username: p.username,
+        seatId: p.seatId,        // 🔥 ADD THIS LINE
+        resultAmount: totalStake,
+        balance: p.balance,
+        multiplier: playerMultiplier,
+        isDealer: false
+      });
+
+    } else {
+      // ❌ PLAYER LOSES → dealer collects using DEALER multiplier
+      const dealerMultiplier = dealer.multiplier || 1;
+      totalStake = bet * dealerMultiplier;
+
+      delta = -totalStake;
+
+      // Bet already deducted in collectBets()
+      const lossExtra = totalStake - bet;
+      if (lossExtra > 0) {
+        p.balance -= lossExtra;
+      }
+
+      dealerDelta += totalStake;
+
+      console.log(
+        `❌ LOSE → ${p.username} | Bet:${bet} | Dealer x${dealerMultiplier} | Player pays:${totalStake}`
+      );
+
+      results.push({
+        username: p.username,
+        seatId: p.seatId,        // 🔥 ADD THIS LINE
+        resultAmount: -totalStake,
+        balance: p.balance,
+        multiplier: dealerMultiplier,
+        isDealer: false
+      });
+    }
+  });
+
+  // ===== FINAL BANKER SETTLEMENT =====
+
+  dealer.balance += dealerDelta;
+
+  if (typeof table.bankerPot !== "number") {
+    table.bankerPot = 0;
+  }
+
+  table.bankerPot += dealerDelta;
+  if (table.bankerPot < 0) table.bankerPot = 0;
+
+  dealer.bankerFund = 0;
+
+  results.push({
+    username: dealer.username,
+    seatId: dealer.seatId,       // 🔥 ADD THIS LINE
+    resultAmount: dealerDelta,
+    balance: dealer.balance,
+    bankerPot: table.bankerPot,
+    multiplier: dealer.multiplier || 1,
+    isDealer: true
+  });
+
+  console.log(
+    `🃏 Banker (${dealer.username}) | Fund:${initialFund} | P/L:${dealerDelta} | New Balance:${dealer.balance}`
+  );
+
+  return results;
+}
+
+module.exports = {
+  collectBets,
+  payoutWinners
+};

@@ -1,0 +1,336 @@
+const { tables } = require("../state/tables");
+const { validUsers } = require("../state/users");
+const { wsSend, broadcastToTable } = require("../ws/sender");
+const { assignBaseAiFirst } = require("./tableHelpers");
+const { hardResetTable } = require("./roundReset");
+const { buildGameStateSnapshot } = require("./tableSnapshot");
+
+function hasStaleTableState(table) {
+  return Boolean(
+    table.roundInProgress ||
+    table.gameInProgress ||
+    table.joinLockedForRound ||
+    table.waitingForNextRound ||
+    table.dealAckReceived ||
+    table.watchTimerStarted ||
+    table.isProcessingResult ||
+    table.autoStartCalled ||
+    table.countdownInterval ||
+    table.betInterval ||
+    table.watchTimer ||
+    table.findWinnerTimer ||
+    table.payoutTimer ||
+    table.currentWinners?.length
+  );
+}
+
+function shouldJoinAsWaiting(table) {
+  if (!table.roundInProgress) return false;
+  return !!table.joinLockedForRound;
+}
+
+function serializeTablePlayers(table) {
+  return table.players.map(p => ({
+    seatId: p.seatId,
+    username: p.username,
+    balance: p.balance,
+    isAi: p.isAi,
+    ready: p.ready,
+    waiting: p.waiting
+  }));
+}
+
+function sendJoinSuccess(ws, table, assignedSeat) {
+  wsSend(ws, {
+    type: "tables:join:res",
+    success: true,
+    result: {
+      tableId: table.tableId,
+      tableName: table.tableName,
+      assignedSeat,
+      gameInProgress: table.gameInProgress,
+      joinLocked: !!table.joinLockedForRound
+    }
+  });
+
+  wsSend(ws, {
+    type: "table:full:update",
+    tableId: table.tableId,
+    gameInProgress: table.gameInProgress,
+    joinLocked: !!table.joinLockedForRound,
+    players: table.players.map(p => ({
+      seatId: p.seatId,
+      username: p.username,
+      balance: p.balance,
+      isAi: p.isAi,
+      ready: p.ready,
+      waiting: p.waiting
+    }))
+  });
+
+  if (table.roundInProgress) {
+    wsSend(ws, buildGameStateSnapshot(table));
+  }
+
+  broadcastToTable(table.tableId, {
+    type: "table:update",
+    tableId: table.tableId,
+    players: serializeTablePlayers(table)
+  });
+}
+
+function leaveTable(ws, d = {}) {
+  const tableId = d.tableId || ws.tableId;
+  const username = d.username || ws.username;
+  const isDisconnect = !!d.isDisconnect;
+
+  if (isDisconnect) {
+    console.log(`[LEAVE] disconnect requested user=${username || "unknown"} table=${tableId || "unknown"}`);
+  }
+
+  if (!tableId || !username) {
+    if (!isDisconnect) {
+      wsSend(ws, {
+        type: "tables:leave:res",
+        success: false,
+        error: "Missing tableId or username"
+      });
+    }
+    return;
+  }
+
+  const table = tables[tableId];
+  if (!table) {
+    if (!isDisconnect) {
+      wsSend(ws, {
+        type: "tables:leave:res",
+        success: false,
+        tableId,
+        error: "Table not found"
+      });
+    }
+    return;
+  }
+
+  const targetPlayer = table.players.find(p => p.username === username && !p.isAi);
+  const hadPlayer = !!targetPlayer;
+
+  if (!hadPlayer && !isDisconnect) {
+    wsSend(ws, {
+      type: "tables:leave:res",
+      success: false,
+      tableId,
+      error: "User not at this table"
+    });
+    return;
+  }
+
+  if (table.roundInProgress) {
+    if (!targetPlayer) {
+      console.warn(`[LEAVE] deferred target missing user=${username} table=${tableId} (no-op)`);
+      if (!isDisconnect) {
+        wsSend(ws, {
+          type: "tables:leave:res",
+          success: false,
+          tableId,
+          error: "User not at this table"
+        });
+      }
+      return;
+    }
+
+    if (targetPlayer.leaveAfterRound) {
+      console.log(`[LEAVE] deferred already marked user=${username} table=${tableId}`);
+      if (isDisconnect) {
+        targetPlayer.ws = null;
+      }
+      if (!isDisconnect) {
+        wsSend(ws, {
+          type: "tables:leave:res",
+          success: true,
+          tableId,
+          deferredUntilRoundEnd: true
+        });
+      }
+      return;
+    }
+
+    targetPlayer.leaveAfterRound = true;
+    targetPlayer.leaveReason = isDisconnect ? "disconnect" : "manual";
+    targetPlayer.leaveRequestedAt = Date.now();
+    if (isDisconnect) {
+      targetPlayer.ws = null;
+    }
+    console.log(`[LEAVE] deferred marked user=${username} table=${tableId} reason=${targetPlayer.leaveReason}`);
+
+    console.log(
+      `🕒 Deferred leave for ${username} on ${tableId} until round end (${targetPlayer.leaveReason})`
+    );
+
+    if (!isDisconnect) {
+      wsSend(ws, {
+        type: "tables:leave:res",
+        success: true,
+        tableId,
+        deferredUntilRoundEnd: true
+      });
+    }
+    return;
+  }
+
+  if (targetPlayer && targetPlayer.ws) {
+    targetPlayer.ws.tableId = null;
+    targetPlayer.ws.username = null;
+    targetPlayer.ws = null;
+  }
+  table.players = table.players.filter(p => p.username !== username);
+
+  if (ws && ws.tableId === tableId && ws.username === username) {
+    ws.tableId = null;
+    ws.username = null;
+  }
+
+  if (table.players.filter(p => !p.isAi).length === 0) {
+    console.log(`🧹 Table ${tableId} empty → clearing AI & resetting state`);
+    hardResetTable(table);
+    broadcastToTable(tableId, {
+      type: "table:reset",
+      tableId
+    });
+  }
+
+  broadcastToTable(tableId, {
+    type: "table:update",
+    tableId,
+    players: serializeTablePlayers(table)
+  });
+
+  if (!isDisconnect) {
+    wsSend(ws, {
+      type: "tables:leave:res",
+      success: true,
+      tableId,
+      deferredUntilRoundEnd: false
+    });
+  }
+}
+
+function joinTable(ws, d) {
+  const u = validUsers.find(x => x.username === d.username);
+  if (!u) {
+    return wsSend(ws, {
+      type: "tables:join:res",
+      success: false,
+      error: "Invalid user"
+    });
+  }
+
+  const table = tables[d.tableId];
+  if (!table) {
+    return wsSend(ws, {
+      type: "tables:join:res",
+      success: false,
+      error: "Table not found"
+    });
+  }
+
+  const realPlayersCountBeforeJoin = table.players.filter(p => !p.isAi).length;
+  if (realPlayersCountBeforeJoin === 0 && hasStaleTableState(table)) {
+    console.log(`🛠 Defensive reset on join for ${table.tableId} (stale state detected)`);
+    hardResetTable(table);
+  }
+
+  const alreadyJoined = table.players.find(
+    p => p.username === u.username && !p.isAi
+  );
+  if (alreadyJoined) {
+    const oldWs = alreadyJoined.ws;
+    if (oldWs && oldWs !== ws) {
+      try {
+        wsSend(oldWs, { type: "session:replaced", tableId: table.tableId });
+      } catch (error) {
+        console.warn(`[JOIN] failed to notify replaced session user=${u.username} table=${table.tableId}`, error);
+      }
+      oldWs.tableId = null;
+      oldWs.username = null;
+      try {
+        oldWs.terminate?.();
+      } catch (error) {
+        console.warn(`[JOIN] failed to terminate replaced session user=${u.username} table=${table.tableId}`, error);
+      }
+    }
+
+    alreadyJoined.ws = ws;
+    alreadyJoined.socketId = ws._socket?.remotePort;
+
+    const reconnectingDeferredDisconnect =
+      alreadyJoined.leaveAfterRound === true &&
+      alreadyJoined.leaveReason === "disconnect";
+
+    if (reconnectingDeferredDisconnect) {
+      const shouldWaitNextRound = table.roundInProgress && table.joinLockedForRound;
+
+      if (shouldWaitNextRound) {
+        alreadyJoined.waiting = true;
+        alreadyJoined.ready = false;
+        alreadyJoined.currentBet = 0;
+        alreadyJoined.drawAction = null;
+        delete alreadyJoined.cards;
+        delete alreadyJoined.hand;
+        alreadyJoined.hasDrawn = false;
+        console.log(
+          `[REJOIN_POLICY] rejoin_mode=wait_next_round user=${u.username} table=${table.tableId} roundInProgress=${table.roundInProgress} joinLocked=${table.joinLockedForRound}`
+        );
+      } else {
+        alreadyJoined.waiting = false;
+        console.log(
+          `[REJOIN_POLICY] rejoin_mode=current_round user=${u.username} table=${table.tableId} roundInProgress=${table.roundInProgress} joinLocked=${table.joinLockedForRound}`
+        );
+      }
+
+      alreadyJoined.leaveAfterRound = false;
+      alreadyJoined.leaveReason = null;
+      alreadyJoined.leaveRequestedAt = null;
+    }
+
+    ws.tableId = table.tableId;
+    ws.username = u.username;
+
+    sendJoinSuccess(ws, table, alreadyJoined.seatId);
+    return;
+  }
+
+  assignBaseAiFirst(table);
+
+  const realPlayersCount = table.players.filter(p => !p.isAi).length;
+  if (realPlayersCount >= 4) {
+    return wsSend(ws, {
+      type: "tables:join:res",
+      success: false,
+      error: "Table already has maximum real players"
+    });
+  }
+
+  const usedSeats = table.players.map(p => p.seatId);
+  let seatId = 1;
+  while (usedSeats.includes(seatId)) seatId++;
+
+  const newPlayer = {
+    username: u.username,
+    token: u.token,
+    balance: u.balance,
+    seatId,
+    isAi: false,
+    ready: false,
+    waiting: shouldJoinAsWaiting(table),
+    socketId: ws._socket?.remotePort
+  };
+
+  table.players.push(newPlayer);
+  newPlayer.ws = ws;
+  ws.tableId = table.tableId;
+  ws.username = u.username;
+  sendJoinSuccess(ws, table, seatId);
+}
+
+module.exports = { joinTable, leaveTable };

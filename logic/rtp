@@ -1,0 +1,49 @@
+// ===== rtp.js =====
+
+function evaluateRTP(rtpStats, roundTotalBet, targetRTP) {
+  // 🛡 hard safety (prevents NaN propagation)
+  roundTotalBet = Number(roundTotalBet) || 0;
+  targetRTP = Number(targetRTP) || 0;
+
+  // init stats if missing
+  rtpStats.totalBets = Number(rtpStats.totalBets) || 0;
+  rtpStats.totalPayouts = Number(rtpStats.totalPayouts) || 0;
+  rtpStats.totalRounds = Number(rtpStats.totalRounds) || 0;
+
+  // 1️⃣ Accumulate REAL bets
+  rtpStats.totalBets += roundTotalBet;
+  rtpStats.totalRounds += 1;
+
+  // 2️⃣ Calculate actual RTP
+  const actualRTP =
+    rtpStats.totalBets > 0
+      ? rtpStats.totalPayouts / rtpStats.totalBets
+      : targetRTP;
+
+  // 3️⃣ Warm-up protection
+  if (rtpStats.totalRounds < 20) {
+    return { pot: 1, bias: "warmup", actualRTP };
+  }
+
+  // 4️⃣ Dead-zone near target
+  const delta = actualRTP - targetRTP;
+
+  if (Math.abs(delta) < 0.03) {
+    return { pot: 1, bias: "neutral", actualRTP };
+  }
+
+  // 5️⃣ Controlled correction
+  if (actualRTP < targetRTP) {
+    return { pot: 2, bias: "playerWin", actualRTP };
+  }
+
+  return { pot: 0, bias: "dealerWin", actualRTP };
+}
+
+function recordPayout(rtpStats, payout) {
+  payout = Number(payout) || 0;
+  rtpStats.totalPayouts = Number(rtpStats.totalPayouts) || 0;
+  rtpStats.totalPayouts += payout;
+}
+
+module.exports = { evaluateRTP, recordPayout };

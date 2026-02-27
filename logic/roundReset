@@ -1,0 +1,119 @@
+//====== roundReset.js ======
+
+function resetPlayersForNextRound(table) {
+  table.players.forEach(p => {
+    // 🔥 If they were waiting (spectating), they are now IN
+    if (p.waiting) {
+        console.log(`✨ Promoted ${p.username} to Active Player`);
+        p.waiting = false;
+    }
+    
+    p.ready = true; 
+    delete p.currentBet;
+    delete p.cards;
+    delete p.hand;
+    p.hasDrawn = false;
+    p.drawAction = null;
+  });
+}
+
+function resetTableState(table) {
+  table.gameInProgress = false;
+  table.joinLockedForRound = false;
+  table.isProcessingResult = null; // 🔥 CLEAR THE LOCK HERE
+  // 🔴 CLEAR TIMERS
+  if (table.countdownInterval) {
+    clearInterval(table.countdownInterval);
+    table.countdownInterval = null;
+  }
+
+  if (table.betInterval) {
+    clearInterval(table.betInterval);
+    table.betInterval = null;
+  }
+
+  // 🔁 reset values (NOT null)
+  table.countdown = 0;
+  table.betTime = 5;
+
+  // 🔥 round authority cleanup
+  table.dealAckReceived = false;
+  if (table.dealAckTimer) {
+    clearTimeout(table.dealAckTimer);
+    table.dealAckTimer = null;
+  }
+  table.dealAckDeadlineAt = null;
+  table.watchTimerStarted = false;
+
+  if (table.watchTimer) {
+    clearInterval(table.watchTimer);
+    table.watchTimer = null;
+  }
+  if (table.dealerActionTimer) {
+    clearInterval(table.dealerActionTimer);
+    table.dealerActionTimer = null;
+  }
+
+  table.currentWinners = [];
+
+  table.roundState.inProgress = false;
+  table.roundState.startedAt = 0;
+}
+
+function hardResetTable(table) {
+  if (!table) return;
+
+  [
+    table.countdownInterval,
+    table.betInterval,
+    table.watchTimer,
+    table.dealerActionTimer,
+    table.findWinnerTimer,
+    table.payoutTimer,
+    table.dealAckTimer
+  ].forEach(timer => {
+    if (!timer) return;
+    clearInterval(timer);
+    clearTimeout(timer);
+  });
+
+  table.countdownInterval = null;
+  table.betInterval = null;
+  table.watchTimer = null;
+  table.dealerActionTimer = null;
+  table.findWinnerTimer = null;
+  table.payoutTimer = null;
+  table.dealAckTimer = null;
+  table.dealAckDeadlineAt = null;
+
+  table.gameInProgress = false;
+  table.roundInProgress = false;
+  table.joinLockedForRound = false;
+  table.waitingForNextRound = false;
+  table.dealAckReceived = false;
+  table.watchTimerStarted = false;
+  table.isProcessingResult = null;
+  table.autoStartCalled = false;
+
+  table.countdown = 0;
+  table.betTime = 5;
+  table.currentWinners = [];
+
+  if (!table.roundState) table.roundState = {};
+  table.roundState.inProgress = false;
+  table.roundState.startedAt = 0;
+
+  table.players = [];
+  table.currentDealerName = null;
+  table.bankerPot = 0;
+  table.dealerStartPot = 0;
+  table.dealerRoundsPlayed = 0;
+  table.isWarningActive = false;
+  table.dealerWarningRounds = 0;
+}
+
+module.exports = {
+  resetPlayersForNextRound,
+  resetTableState,
+  hardResetTable
+};

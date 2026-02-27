@@ -1,0 +1,51 @@
+// ===== dealCards.js =====
+
+function createDeck() {
+  // Suit values for Power ranking: Spade(4), Heart(3), Diamond(2), Club(1)
+  const suits = [4, 3, 2, 1]; 
+  const deck = [];
+  for (let rank = 1; rank <= 13; rank++) {
+    for (const suit of suits) {
+      // Must be objects so shanRules can read card.rank and card.suit
+      deck.push({ rank, suit });
+    }
+  }
+  return deck;
+}
+
+function shuffle(deck) {
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+}
+
+function createDealer(deck) {
+  const used = new Set();
+
+  const draw = () => {
+    let card;
+    // We use a simple loop to find an unused card
+    while (true) {
+      card = deck[Math.floor(Math.random() * deck.length)];
+      if (!used.has(card)) {
+        used.add(card);
+        return card;
+      }
+    }
+  };
+
+  // SHAN LOGIC: Change from draw5 to draw2 for the initial deal
+  const draw2 = () => [draw(), draw()];
+  
+  // Keep draw3 in case someone draws a 3rd card
+  const draw3 = () => [draw(), draw(), draw()];
+
+  return { draw2, draw3 };
+}
+
+module.exports = {
+  createDeck,
+  shuffle,
+  createDealer
+};

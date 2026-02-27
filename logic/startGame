@@ -1,0 +1,182 @@
+// ===== startGame.js =====
+const { tables } = require("../state/tables");
+const { broadcastToTable } = require("../ws/sender");
+const { targetRTP } = require("../config/rtp");
+const { createDeck, shuffle } = require("./dealCards");
+const { evaluateRTP } = require("./rtp");
+// Note: payoutWinners and recordPayout removed from here, they move to gameHandler.js
+const gameHelpers = require("./gameHelpers");
+const { recoverDealAckTimeout } = require("./gameHandlers");
+const { abortRoundIfNoConnectedRealPlayers } = require("./roundSafety");
+const DEAL_ACK_TIMEOUT_MS = 10000;
+
+/**
+ * Helper to convert Server Card Objects to Unity Strings
+ * e.g. { rank: 1, suit: 4 } => "1S"
+ */
+function formatCardsForUnity(cards) {
+    const suitMap = { 4: "S", 3: "H", 2: "D", 1: "C" };
+    return cards.map(c => `${c.rank}${suitMap[c.suit]}`);
+}
+
+function startGame(ws, data) {
+   // const tableId = data.tableId;
+    const tableId = (data && data.tableId) ? data.tableId : data;
+    const table = tables[tableId];
+    if (!table) return;
+    if (abortRoundIfNoConnectedRealPlayers(table, "startGame")) return;
+
+   // ✅ NO MORE DEDUCTION HERE. 
+    // It was already handled in gameFlow.assignDealerForRound
+    const dealerPlayerObj = table.players.find(p => p.isDealer);
+    
+    // We only keep a check to make sure the dealer has a fund assigned
+    if (!dealerPlayerObj || !table.bankerPot) {
+        console.error("❌ [ERROR] Game starting without a valid Banker or Pot!");
+        return;
+    }
+
+    // Assign the table's bankerPot to the dealer object for the payout script to use later
+    dealerPlayerObj.bankerFund = table.bankerPot;
+    // ==========================================
+
+    // ===============================
+    // 🔄 ROUND RESET
+    // ===============================
+    table.roundId += 1;
+    if (typeof table.roundAbortToken !== "number") {
+        table.roundAbortToken = 0;
+    }
+    table.roundAborted = false;
+    table.dealAckReceived = false;
+    table.watchTimerStarted = false;
+    if (table.dealAckTimer) {
+        clearTimeout(table.dealAckTimer);
+        table.dealAckTimer = null;
+    }
+    table.dealAckDeadlineAt = Date.now() + DEAL_ACK_TIMEOUT_MS;
+    const dealAckRoundId = table.roundId;
+    table.dealAckTimer = setTimeout(() => {
+        recoverDealAckTimeout(tableId, dealAckRoundId);
+    }, DEAL_ACK_TIMEOUT_MS);
+    console.log(`⏳ DEAL ACK timer started | table=${tableId} round=${dealAckRoundId} timeoutMs=${DEAL_ACK_TIMEOUT_MS}`);
+
+    if (table.watchTimer) {
+        clearTimeout(table.watchTimer);
+        table.watchTimer = null;
+    }
+
+    table.currentWinners = [];
+    table.roundState.inProgress = true;
+    table.roundState.startedAt = Date.now();
+    table.gameInProgress = true;
+
+    console.log(`🌀 SHAN ROUND STARTED | table=${tableId} | roundId=${table.roundId}`);
+
+    // --- Build active players ---
+    let players = table.players
+        .filter(p => !p.waiting)
+        .map(p => ({
+            name: p.username,
+            isAi: p.isAi,
+            seatId: p.seatId,
+            unit: p.balance, // ✅ Picks up balance AFTER 10X deduction
+            bet: Number(p.currentBet) || 0,
+            cards: null,
+            isDealer: p.isDealer,
+            hand: null
+        }));
+    
+    const roundTotalBet = players.reduce((sum, p) => sum + p.bet, 0);
+    const activePlayerCount = players.filter(p => p.bet > 0).length;
+
+    // --- RTP Init ---
+    const rtp = table.rtpStats;
+    const { pot, bias, actualRTP } = evaluateRTP(rtp, roundTotalBet, activePlayerCount, targetRTP);
+
+    // --- 🃏 NEW: DECK PERSISTENCE ---
+    table.deck = createDeck();
+    shuffle(table.deck);
+    table.deckIndex = 0; 
+    
+    // --- Deal (SHAN START: 2 CARDS) ---
+    players.forEach(p => {
+        p.cards = table.deck.slice(table.deckIndex, table.deckIndex + 2);
+        table.deckIndex += 2;
+        p.hand = gameHelpers.evaluateHand(p.cards);
+    });
+
+    // --- Apply RTP Bias (Pot=2: Real Player Advantage) ---
+    const realPlayers = players.filter(p => !p.isAi);
+    const aiPlayers = players.filter(p => p.isAi);
+
+    if (pot === 2 && realPlayers.length && aiPlayers.length) {
+        const bestAIPoints = Math.max(...aiPlayers.map(p => p.hand.points));
+        const targetReal = realPlayers.reduce((a, b) =>
+            a.hand.points > b.hand.points ? a : b
+        );
+
+        targetReal.cards = gameHelpers.forceWinningHand(bestAIPoints);
+        targetReal.hand = gameHelpers.evaluateHand(targetReal.cards);
+        console.log(`🔥 RTP Bias: Forced win for ${targetReal.name}`);
+    }
+
+    // --- 🔄 Sync updated info back to table.players (AUTHORITATIVE STATE) ---
+    table.players.forEach(tp => {
+        const p = players.find(pl => pl.name === tp.username);
+        if (p) {
+            tp.cards = p.cards;
+            const result = gameHelpers.calculateShanResult(tp.cards);
+            tp.points = result.points;
+            tp.multiplier = result.payoutMultiplier;
+            tp.isDealer = p.isDealer;
+            tp.currentBet = p.bet;
+            // ==========================================
+            // ✅ "DO" LOGIC (Natural 8 or 9)
+            // ==========================================
+           // tp.isDo = (tp.points === 8 || tp.points === 9);
+           tp.isDo = (tp.cards.length === 2 && (tp.points === 8 || tp.points === 9));
+
+            // ==========================================
+            // 📝 PLAYER CARD LOGS
+            // ==========================================
+            const cardDisplay = formatCardsForUnity(tp.cards).join(", ");
+            const pointLabel = tp.points === 0 ? "Bu (ဘူ)" : tp.points;
+            console.log(`[PLAYER LOG] Name: ${tp.username} | Cards: [${cardDisplay}] | Points: ${pointLabel}| Do: ${tp.isDo} | Sa: ${tp.multiplier}`);
+            // ==========================================
+        }
+
+    });
+
+    // --- Prepare final payload for Unity ---
+    const playersInRound = players.map(p => {
+        const result = gameHelpers.calculateShanResult(p.cards);
+    
+        return {
+            name: p.name,
+            isAi: p.isAi,
+            seatId: p.seatId,
+            unit: p.unit,
+            cards: formatCardsForUnity(p.cards),
+            points: result.points,
+            isDo: result.isDo,          // ✅ SERVER AUTHORITY
+            multiplier: result.multiplier,
+            isDealer: p.isDealer
+        };
+    });
+    
+    const dealerPlayer = playersInRound.find(p => p.isDealer);
+    const final = {
+        type: "game:start:result",
+        tableId,
+        roundId: table.roundId,
+        pot,
+        dealer: dealerPlayer ? dealerPlayer.name : null,
+        players: playersInRound,
+        rtp: { target: targetRTP, actual: actualRTP.toFixed(3), bias }
+    };
+
+    broadcastToTable(tableId, final);
+}
+
+module.exports = { startGame };

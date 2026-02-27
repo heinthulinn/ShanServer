@@ -1,16 +1,23 @@
 // ===== dealerPhase.js =====
 const { tables } = require("../state/tables");
 const { broadcastToTable, wsSend } = require("../ws/sender");
+const WebSocket = require("ws");
 const gameHelpers = require("./gameHelpers");
+const { abortRoundIfNoConnectedRealPlayers, isRoundContextValid } = require("./roundSafety");
 
 function startDealerActionPhase(tableId, roundId, startFindWinnerPhase) {
     const table = tables[tableId];
+    if (!table) return;
+    if (abortRoundIfNoConnectedRealPlayers(table, "dealerPhase:start")) return;
+    const phaseToken = Number(table.roundAbortToken) || 0;
     const dealer = table.players.find(p => p.isDealer);
+    if (!dealer) return;
 
     console.log(`👑 [DEALER ACTION START] Table:${tableId} | Round:${roundId}`);
 
     const threeCardPlayers = table.players
         .filter(p => p.cards && p.cards.length === 3)
+        .filter(p => p.isAi || (p.ws && p.ws.readyState === WebSocket.OPEN))
         .sort((a, b) => a.seatId - b.seatId);
 
     broadcastToTable(tableId, {
@@ -26,6 +33,7 @@ function startDealerActionPhase(tableId, roundId, startFindWinnerPhase) {
     // 🤖 AI DEALER
     if (dealer.isAi) {
         setTimeout(() => {
+            if (!isRoundContextValid(table, roundId, phaseToken, "dealerPhase:aiAction")) return;
             runAIDealerAction(tableId, roundId, startFindWinnerPhase);
         }, 1500);
         return;
@@ -34,6 +42,11 @@ function startDealerActionPhase(tableId, roundId, startFindWinnerPhase) {
     // 👤 HUMAN DEALER TIMER
     let timeLeft = 10;
     table.dealerActionTimer = setInterval(() => {
+        if (!isRoundContextValid(table, roundId, phaseToken, "dealerPhase:humanTick")) {
+            clearInterval(table.dealerActionTimer);
+            table.dealerActionTimer = null;
+            return;
+        }
         timeLeft--;
 
         if (timeLeft <= 0) {
@@ -55,11 +68,12 @@ function startDealerActionPhase(tableId, roundId, startFindWinnerPhase) {
 
 
 function handleDealerDecision(ws, data, startFindWinnerPhase) {
-    const { tableId, action} = data;
+    const { tableId, action } = data;
     const targetSeatId = data.targetSeatId || data.seatId;
     console.log(`👑 [DEALER ACTION RECEIVED] ${action} on Seat: ${targetSeatId}`);
     const table = tables[tableId];
     if (!table) return;
+    if (abortRoundIfNoConnectedRealPlayers(table, "dealerPhase:decision")) return;
 
     if (table.dealerActionTimer) {
         clearInterval(table.dealerActionTimer);
@@ -67,16 +81,20 @@ function handleDealerDecision(ws, data, startFindWinnerPhase) {
     }
 
     console.log(`👑 [DEALER ACTION RECEIVED] ${action}`);
-    executeDealerAction(tableId, table.roundId, action, startFindWinnerPhase,targetSeatId);
+    executeDealerAction(tableId, table.roundId, action, startFindWinnerPhase, targetSeatId);
 }
 
 function runAIDealerAction(tableId, roundId, startFindWinnerPhase) {
     const table = tables[tableId];
+    if (!table) return;
+    if (abortRoundIfNoConnectedRealPlayers(table, "dealerPhase:runAi")) return;
     const dealer = table.players.find(p => p.isDealer);
     const dealerRes = gameHelpers.calculateShanResult(dealer.cards);
 
     const threeCardPlayers = table.players.filter(
         p => Array.isArray(p.cards) && p.cards.length === 3
+    ).filter(
+        p => p.isAi || (p.ws && p.ws.readyState === WebSocket.OPEN)
     );
 
     let action = "skip";
@@ -97,6 +115,8 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase, tar
     const table = tables[tableId];
     const dealer = table.players.find(p => p.isDealer);
     if (!table || !dealer) return;
+    if (abortRoundIfNoConnectedRealPlayers(table, "dealerPhase:execute")) return;
+    const phaseToken = Number(table.roundAbortToken) || 0;
 
     // --- NEW HELPER FOR CORRECT POINTS ---
     const prepareRevealData = (playerList) => {
@@ -144,22 +164,27 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase, tar
 
         case "catch3cards":
             const threeCardPlayers = table.players.filter(p => p.cards && p.cards.length === 3);
-            
+            const connectedThreeCardPlayers = threeCardPlayers.filter(
+                p => p.isAi || (p.ws && p.ws.readyState === WebSocket.OPEN)
+            );
+
             broadcastToTable(tableId, {
                 type: "table:cards:reveal",
-                players: prepareRevealData(threeCardPlayers) // 🔥 Use the helper
+                players: prepareRevealData(connectedThreeCardPlayers) // 🔥 Use the helper
             });
 
             broadcastToTable(tableId, {
                 type: "ui:dealercatchcardview:show",
                 dealer: { seatId: dealer.seatId, cards: mapCardsToStrings(dealer.cards) }, // 🔥 FIXED
-                players: threeCardPlayers.map(p => ({ seatId: p.seatId, cards: mapCardsToStrings(p.cards) })), // 🔥 FIXED
+                players: connectedThreeCardPlayers.map(p => ({ seatId: p.seatId, cards: mapCardsToStrings(p.cards) })), // 🔥 FIXED
                 roundId
             });
             break;
 
         case "catchall":
-            const allOpponents = table.players.filter(p => !p.isDealer);
+            const allOpponents = table.players
+                .filter(p => !p.isDealer)
+                .filter(p => p.isAi || (p.ws && p.ws.readyState === WebSocket.OPEN));
 
             broadcastToTable(tableId, {
                 type: "table:cards:reveal",
@@ -179,9 +204,12 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase, tar
                 dealer.hasDrawn = true;
                 const card = table.deck[table.deckIndex++];
                 dealer.cards.push(card);
-                const cardName = `${card.rank}${{4:"S",3:"H",2:"D",1:"C"}[card.suit]}`;
+                const cardName = `${card.rank}${{ 4: "S", 3: "H", 2: "D", 1: "C" }[card.suit]}`;
                 broadcastToTable(tableId, { type: "game:dealer:draw", card: cardName, roundId });
-                setTimeout(() => startFindWinnerPhase(tableId, roundId), 1500);
+                setTimeout(() => {
+                    if (!isRoundContextValid(table, roundId, phaseToken, "dealerPhase:draw->result")) return;
+                    startFindWinnerPhase(tableId, roundId);
+                }, 1500);
             }
             return;
 
@@ -193,6 +221,7 @@ function executeDealerAction(tableId, roundId, action, startFindWinnerPhase, tar
 
     // Timer for Catch/Reveal cases
     setTimeout(() => {
+        if (!isRoundContextValid(table, roundId, phaseToken, "dealerPhase:catch->result")) return;
         broadcastToTable(tableId, { type: "ui:dealercatchcardview:hide", roundId });
         startFindWinnerPhase(tableId, roundId);
     }, 5000);

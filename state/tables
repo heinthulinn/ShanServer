@@ -32,6 +32,8 @@ tableTypes.forEach((t, i) => {
     //ROUND AUTHORITY (NEW)
     roundId: 0,
     dealAckReceived: false,
+    dealAckTimer: null,
+    dealAckDeadlineAt: null,
     watchTimerStarted: false,
     watchTimer: null,
     currentWinners: [],

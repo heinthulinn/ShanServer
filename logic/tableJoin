@@ -40,6 +40,45 @@ function serializeTablePlayers(table) {
   }));
 }
 
+function sendJoinSuccess(ws, table, assignedSeat) {
+  wsSend(ws, {
+    type: "tables:join:res",
+    success: true,
+    result: {
+      tableId: table.tableId,
+      tableName: table.tableName,
+      assignedSeat,
+      gameInProgress: table.gameInProgress,
+      joinLocked: !!table.joinLockedForRound
+    }
+  });
+
+  wsSend(ws, {
+    type: "table:full:update",
+    tableId: table.tableId,
+    gameInProgress: table.gameInProgress,
+    joinLocked: !!table.joinLockedForRound,
+    players: table.players.map(p => ({
+      seatId: p.seatId,
+      username: p.username,
+      balance: p.balance,
+      isAi: p.isAi,
+      ready: p.ready,
+      waiting: p.waiting
+    }))
+  });
+
+  if (table.roundInProgress) {
+    wsSend(ws, buildGameStateSnapshot(table));
+  }
+
+  broadcastToTable(table.tableId, {
+    type: "table:update",
+    tableId: table.tableId,
+    players: serializeTablePlayers(table)
+  });
+}
+
 function leaveTable(ws, d = {}) {
   const tableId = d.tableId || ws.tableId;
   const username = d.username || ws.username;
@@ -102,6 +141,9 @@ function leaveTable(ws, d = {}) {
 
     if (targetPlayer.leaveAfterRound) {
       console.log(`[LEAVE] deferred already marked user=${username} table=${tableId}`);
+      if (isDisconnect) {
+        targetPlayer.ws = null;
+      }
       if (!isDisconnect) {
         wsSend(ws, {
           type: "tables:leave:res",
@@ -116,6 +158,9 @@ function leaveTable(ws, d = {}) {
     targetPlayer.leaveAfterRound = true;
     targetPlayer.leaveReason = isDisconnect ? "disconnect" : "manual";
     targetPlayer.leaveRequestedAt = Date.now();
+    if (isDisconnect) {
+      targetPlayer.ws = null;
+    }
     console.log(`[LEAVE] deferred marked user=${username} table=${tableId} reason=${targetPlayer.leaveReason}`);
 
     console.log(
@@ -134,6 +179,8 @@ function leaveTable(ws, d = {}) {
   }
 
   if (targetPlayer && targetPlayer.ws) {
+    targetPlayer.ws.tableId = null;
+    targetPlayer.ws.username = null;
     targetPlayer.ws = null;
   }
   table.players = table.players.filter(p => p.username !== username);
@@ -197,11 +244,33 @@ function joinTable(ws, d) {
     p => p.username === u.username && !p.isAi
   );
   if (alreadyJoined) {
-    return wsSend(ws, {
-      type: "tables:join:res",
-      success: false,
-      error: "User already joined this table"
-    });
+    const oldWs = alreadyJoined.ws;
+    if (oldWs && oldWs !== ws) {
+      try {
+        wsSend(oldWs, { type: "session:replaced", tableId: table.tableId });
+      } catch (error) {
+        console.warn(`[JOIN] failed to notify replaced session user=${u.username} table=${table.tableId}`, error);
+      }
+      oldWs.tableId = null;
+      oldWs.username = null;
+      try {
+        oldWs.terminate?.();
+      } catch (error) {
+        console.warn(`[JOIN] failed to terminate replaced session user=${u.username} table=${table.tableId}`, error);
+      }
+    }
+
+    alreadyJoined.ws = ws;
+    alreadyJoined.socketId = ws._socket?.remotePort;
+    alreadyJoined.leaveAfterRound = false;
+    alreadyJoined.leaveReason = null;
+    alreadyJoined.leaveRequestedAt = null;
+
+    ws.tableId = table.tableId;
+    ws.username = u.username;
+
+    sendJoinSuccess(ws, table, alreadyJoined.seatId);
+    return;
   }
 
   assignBaseAiFirst(table);
@@ -231,48 +300,10 @@ function joinTable(ws, d) {
   };
 
   table.players.push(newPlayer);
+  newPlayer.ws = ws;
   ws.tableId = table.tableId;
   ws.username = u.username;
-
-  // 1️⃣ join confirm (Unity relies on this)
-  wsSend(ws, {
-    type: "tables:join:res",
-    success: true,
-    result: {
-      tableId: table.tableId,
-      tableName: table.tableName,
-      assignedSeat: seatId,
-      gameInProgress: table.gameInProgress,
-      joinLocked: !!table.joinLockedForRound
-    }
-  });
-
-  // 2️⃣ full snapshot
-  wsSend(ws, {
-    type: "table:full:update",
-    tableId: table.tableId,
-    gameInProgress: table.gameInProgress,
-    joinLocked: !!table.joinLockedForRound,
-    players: table.players.map(p => ({
-      seatId: p.seatId,
-      username: p.username,
-      balance: p.balance,
-      isAi: p.isAi,
-      ready: p.ready,
-      waiting: p.waiting
-    }))
-  });
-
-  if (table.roundInProgress) {
-    wsSend(ws, buildGameStateSnapshot(table));
-  }
-
-  // 3️⃣ notify others
-  broadcastToTable(table.tableId, {
-    type: "table:update",
-    tableId: table.tableId,
-    players: serializeTablePlayers(table)
-  });
+  sendJoinSuccess(ws, table, seatId);
 }
 
 module.exports = { joinTable, leaveTable };

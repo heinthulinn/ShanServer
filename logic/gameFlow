@@ -1,6 +1,7 @@
 // ===== gameFlow.js =====
 const { broadcastToTable } = require("../ws/sender");
 const { tables } = require("../state/tables");
+const WebSocket = require("ws");
 let startGameFn = null;
 
 function registerStartGame(fn) {
@@ -29,9 +30,11 @@ function autoStart(table) {
     table.gameInProgress
 ) return;
 
-  const realPlayers = table.players.filter(p => !p.isAi);
+  const realPlayers = table.players.filter(
+    p => !p.isAi && p.ws && p.ws.readyState === WebSocket.OPEN
+  );
   if (realPlayers.length < 1) return;
-  if (table.players.length < 3) return; 
+  if (table.players.length < 3) return;
   if (!realPlayers.every(p => p.ready)) return;
 
   console.log(`🔥 TABLE READY → STARTING SHAN GAME | table=${table.tableId}`);
@@ -57,8 +60,8 @@ function assignDealerForRound(table) {
   if (warningExpired || normalSessionExpired || isBroke) {
       console.log(`🔄 Rotating Dealer: Reason(Warning:${warningExpired}, Normal:${normalSessionExpired}, Broke:${isBroke})`);
       finalizeBankerSession(table);
-      table.dealerRoundsPlayed = 0; 
-  } 
+      table.dealerRoundsPlayed = 0;
+  }
  // --- FORCED TEST DEALER HACK ---
 /* const humanPlayer = table.players.find(p => !p.isAi); // Find you (the human)
  if (humanPlayer) {
@@ -88,7 +91,7 @@ function assignDealerForRound(table) {
           
           table.isWarningActive = false;
           table.dealerWarningRounds = 0;
-          table.dealerRoundsPlayed = 0; 
+          table.dealerRoundsPlayed = 0;
           dealerFound = true;
           break;
         }
@@ -107,18 +110,18 @@ function assignDealerForRound(table) {
   // 2. 🔥 HANDLE WARNING (3X Profit)
   if (!table.isWarningActive && table.bankerPot >= (table.dealerStartPot * 3)) {
       table.isWarningActive = true;
-      table.dealerWarningRounds = 0; 
+      table.dealerWarningRounds = 0;
   }
 
   // 3. Increment and Broadcast Warning if active
   if (table.isWarningActive) {
-    table.dealerWarningRounds++; 
+    table.dealerWarningRounds++;
     
-    broadcastToTable(table.tableId, { 
-        type: "game:dealer:warning", 
+    broadcastToTable(table.tableId, {
+        type: "game:dealer:warning",
         dealer: dealer.username,
-        currentWarningRound: table.dealerWarningRounds, 
-        totalWarningRounds: 3 
+        currentWarningRound: table.dealerWarningRounds,
+        totalWarningRounds: 3
     });
   }
 
@@ -127,6 +130,7 @@ function assignDealerForRound(table) {
     type: "table:full:update",
     tableId: table.tableId,
     gameInProgress: table.gameInProgress,
+    joinLocked: !!table.joinLockedForRound,
     players: table.players.map(p => ({
       seatId: p.seatId,
       username: p.username,
@@ -139,13 +143,13 @@ function assignDealerForRound(table) {
   // 5. Final Dealer Assignment Sync
   broadcastToTable(table.tableId, {
     type: "game:dealer:assigned",
-    dealer: { 
-      username: dealer.username, 
+    dealer: {
+      username: dealer.username,
       seatId: dealer.seatId,
       isWarning: table.isWarningActive,
       warningRound: table.dealerWarningRounds,
       bankerPot: table.bankerPot,
-      roundsPlayed: table.dealerRoundsPlayed 
+      roundsPlayed: table.dealerRoundsPlayed
     }
   });
 }
@@ -177,8 +181,9 @@ function rotateDealer(table) {
 function startGameForTable(table) {
   if (!table || table.gameInProgress || table.countdownInterval) return;
   
-  table.roundInProgress = true; 
+  table.roundInProgress = true;
   table.gameInProgress = true;
+  table.joinLockedForRound = false;
   
   // 1. Check who the dealer IS before we run assignment logic
   const oldDealerName = table.currentDealerName;
@@ -194,17 +199,17 @@ function startGameForTable(table) {
   // If the dealer name changed, or if this is the very first dealer of the session
   if (oldDealerName !== table.currentDealerName) {
     startDelay = 3000; // 3 seconds for the "New Dealer" drama
-    broadcastToTable(table.tableId, { 
-        type: "game:dealer:changed", 
-        username: newDealer.username, 
-        seatId: newDealer.seatId 
+    broadcastToTable(table.tableId, {
+        type: "game:dealer:changed",
+        username: newDealer.username,
+        seatId: newDealer.seatId
     });
   }
 
   // 4. Wrap the countdown in the delay
   setTimeout(() => {
     table.countdown = 3;
-    broadcastToTable(table.tableId, { type: "c", seconds: table.countdown });
+    broadcastToTable(table.tableId, { type: "game:countdown", seconds: table.countdown });
 
     table.countdownInterval = setInterval(() => {
       table.countdown--;
@@ -213,11 +218,12 @@ function startGameForTable(table) {
       } else {
         clearInterval(table.countdownInterval);
         table.countdownInterval = null;
+        table.joinLockedForRound = true;
         broadcastToTable(table.tableId, { type: "game:countdown", seconds: 0 });
         startBettingPhase(table);
       }
     }, 1000);
-  }, startDelay); 
+  }, startDelay);
 }
 
 function generateAIBet(table, player) {
@@ -283,7 +289,7 @@ function startBettingPhase(table) {
 
       setTimeout(() => {
         // ✅ CRITICAL FIX: Reset roundInProgress so Unity hides the Countdown UI
-      //  table.roundInProgress = false; 
+      //  table.roundInProgress = false;
 
         if (startGameFn) startGameFn(null, { tableId: table.tableId });
         

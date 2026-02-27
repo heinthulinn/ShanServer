@@ -22,7 +22,7 @@ function startGame(ws, data) {
     const table = tables[tableId];
     if (!table) return;
 
-   // ✅ NO MORE DEDUCTION HERE. 
+   // ✅ NO MORE DEDUCTION HERE.
     // It was already handled in gameFlow.assignDealerForRound
     const dealerPlayerObj = table.players.find(p => p.isDealer);
     
@@ -79,7 +79,7 @@ function startGame(ws, data) {
     // --- 🃏 NEW: DECK PERSISTENCE ---
     table.deck = createDeck();
     shuffle(table.deck);
-    table.deckIndex = 0; 
+    table.deckIndex = 0;
     
     // --- Deal (SHAN START: 2 CARDS) ---
     players.forEach(p => {

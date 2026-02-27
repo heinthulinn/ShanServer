@@ -8,7 +8,7 @@ function resetPlayersForNextRound(table) {
         p.waiting = false;
     }
     
-    p.ready = true; 
+    p.ready = true;
     delete p.currentBet;
     delete p.cards;
     delete p.hand;
@@ -38,6 +38,11 @@ function resetTableState(table) {
 
   // 🔥 round authority cleanup
   table.dealAckReceived = false;
+  if (table.dealAckTimer) {
+    clearTimeout(table.dealAckTimer);
+    table.dealAckTimer = null;
+  }
+  table.dealAckDeadlineAt = null;
   table.watchTimerStarted = false;
 
   if (table.watchTimer) {
@@ -59,7 +64,8 @@ function hardResetTable(table) {
     table.betInterval,
     table.watchTimer,
     table.findWinnerTimer,
-    table.payoutTimer
+    table.payoutTimer,
+    table.dealAckTimer
   ].forEach(timer => {
     if (!timer) return;
     clearInterval(timer);
@@ -71,6 +77,8 @@ function hardResetTable(table) {
   table.watchTimer = null;
   table.findWinnerTimer = null;
   table.payoutTimer = null;
+  table.dealAckTimer = null;
+  table.dealAckDeadlineAt = null;
 
   table.gameInProgress = false;
   table.roundInProgress = false;

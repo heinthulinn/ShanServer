@@ -6,6 +6,8 @@ const { createDeck, shuffle } = require("./dealCards");
 const { evaluateRTP } = require("./rtp");
 // Note: payoutWinners and recordPayout removed from here, they move to gameHandler.js
 const gameHelpers = require("./gameHelpers");
+const { recoverDealAckTimeout } = require("./gameHandlers");
+const DEAL_ACK_TIMEOUT_MS = 10000;
 
 /**
  * Helper to convert Server Card Objects to Unity Strings
@@ -42,6 +44,16 @@ function startGame(ws, data) {
     table.roundId += 1;
     table.dealAckReceived = false;
     table.watchTimerStarted = false;
+    if (table.dealAckTimer) {
+        clearTimeout(table.dealAckTimer);
+        table.dealAckTimer = null;
+    }
+    table.dealAckDeadlineAt = Date.now() + DEAL_ACK_TIMEOUT_MS;
+    const dealAckRoundId = table.roundId;
+    table.dealAckTimer = setTimeout(() => {
+        recoverDealAckTimeout(tableId, dealAckRoundId);
+    }, DEAL_ACK_TIMEOUT_MS);
+    console.log(`⏳ DEAL ACK timer started | table=${tableId} round=${dealAckRoundId} timeoutMs=${DEAL_ACK_TIMEOUT_MS}`);
 
     if (table.watchTimer) {
         clearTimeout(table.watchTimer);

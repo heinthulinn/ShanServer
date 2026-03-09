@@ -1,5 +1,38 @@
 const { aiPlayersList } = require("../state/users");
 
+function createAiPlayer(ai, seatId) {
+  return {
+    username: ai.name,
+    balance: ai.unit,
+    seatId,
+    isAi: true,
+    ready: true,
+    waiting: false
+  };
+}
+
+function pickNextAiProfile(table, takenNames = new Set()) {
+  if (!Array.isArray(aiPlayersList) || aiPlayersList.length === 0) return null;
+
+  const totalAi = aiPlayersList.length;
+  const startIndex = Number.isInteger(table.nextAiReplacementCursor)
+    ? table.nextAiReplacementCursor
+    : 0;
+
+  for (let offset = 0; offset < totalAi; offset++) {
+    const index = (startIndex + offset) % totalAi;
+    const candidate = aiPlayersList[index];
+    if (!takenNames.has(candidate.name)) {
+      table.nextAiReplacementCursor = (index + 1) % totalAi;
+      return candidate;
+    }
+  }
+
+  const fallbackIndex = startIndex % totalAi;
+  table.nextAiReplacementCursor = (fallbackIndex + 1) % totalAi;
+  return aiPlayersList[fallbackIndex];
+}
+
 function assignBaseAiFirst(table) {
   const MIN_AI = 2;
   const MAX_AI = 3;
@@ -11,21 +44,60 @@ function assignBaseAiFirst(table) {
     MAX_AI,
     Math.max(MIN_AI, table.maxPlayers - 1)
   );
+  const takenNames = new Set(table.players.map((player) => player.username));
 
   for (let i = 0; i < aiCount; i++) {
-    const ai = aiPlayersList[i];
+    const ai = pickNextAiProfile(table, takenNames);
+    if (!ai) break;
 
-    table.players.push({
-      username: ai.name,
-      balance: ai.unit,
-      seatId: i + 1, // AI ALWAYS TAKE SEAT 1,2,3
-      isAi: true,
-      ready: true,
-      waiting: false
-    });
+    table.players.push(createAiPlayer(ai, i + 1));
+    takenNames.add(ai.name);
   }
 
   console.log(`🤖 AI assigned FIRST (${aiCount})`);
+}
+
+function replaceAiAtSeat(table, seatId) {
+  const takenNames = new Set(
+    table.players
+      .filter((player) => player.seatId !== seatId)
+      .map((player) => player.username)
+  );
+  const ai = pickNextAiProfile(table, takenNames);
+  if (!ai) return null;
+
+  const replacement = createAiPlayer(ai, seatId);
+  const existingIndex = table.players.findIndex((player) => player.seatId === seatId);
+  if (existingIndex >= 0) {
+    table.players[existingIndex] = replacement;
+  } else {
+    table.players.push(replacement);
+  }
+
+  return replacement;
+}
+
+function clearDealerSessionForRemovedPlayer(table, player, reason = "removed") {
+  if (!table || !player) return;
+
+  const isCurrentDealer =
+    player.isDealer || table.currentDealerName === player.username;
+  if (!isCurrentDealer) return;
+
+  console.log(
+    `[DEALER] clearing session for removed player user=${player.username} table=${table.tableId} reason=${reason}`
+  );
+
+  table.currentDealerName = null;
+  table.bankerPot = 0;
+  table.dealerStartPot = 0;
+  table.dealerRoundsPlayed = 0;
+  table.isWarningActive = false;
+  table.dealerWarningRounds = 0;
+  table.players.forEach((currentPlayer) => {
+    currentPlayer.isDealer = false;
+    currentPlayer.bankerFund = 0;
+  });
 }
 
 function getAvailableSeat(table) {
@@ -36,4 +108,9 @@ function getAvailableSeat(table) {
   return null;
 }
 
-module.exports = { assignBaseAiFirst, getAvailableSeat };
+module.exports = {
+  assignBaseAiFirst,
+  replaceAiAtSeat,
+  clearDealerSessionForRemovedPlayer,
+  getAvailableSeat
+};

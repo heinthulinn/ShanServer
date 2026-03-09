@@ -15,6 +15,9 @@ const dealerPhase = require("./dealerPhase");
 const watchPhase = require("./watchPhase");
 const drawPhase = require("./drawPhase");
 const resultPhase = require("./resultPhase");
+const { clearDealerSessionForRemovedPlayer } = require("./tableHelpers");
+const { syncRealPlayerEntityBalance } = require("./balanceAuthority");
+const { enforcePreRoundBalanceEligibility } = require("./tableEligibility");
 
 function serializeTablePlayers(table) {
   return table.players.map(p => ({
@@ -41,6 +44,7 @@ function finalizeDeferredLeaves(table) {
   if (deferredPlayers.length === 0) return 0;
 
   deferredPlayers.forEach(p => {
+    clearDealerSessionForRemovedPlayer(table, p, p.leaveReason || "manual");
     if (p.ws) {
       p.ws.tableId = null;
       p.ws.username = null;
@@ -91,6 +95,7 @@ function pruneDisconnectedRealPlayersBeforeNextRound(table) {
       player.ws.username = null;
       player.ws = null;
     }
+    clearDealerSessionForRemovedPlayer(table, player, reason);
     removedUsers.push(`${player.username}:${reason}`);
     console.log(`[PRUNE] kick user=${player.username} table=${table.tableId} reason=${reason}`);
   });
@@ -185,6 +190,7 @@ function handleGameResult(ws, data)
   if (!table) return;
   const player = table.players.find(p => p.seatId == body.seatId);
   if (player) player.balance += Number(body.updatePoint || 0);
+  syncRealPlayerEntityBalance(player);
 
   // ❌ THIS LINE IS THE KILLER:
   // broadcastToTable(table.tableId, { type: "table:update", tableId: table.tableId, players: table.players });
@@ -250,28 +256,22 @@ function scheduleNextRound(tableId) {
         // 2. WIPE the table and players (Promotes spectators to players)
         resetTableState(table);
         const deferredRemoved = finalizeDeferredLeaves(table);
-        if (deferredRemoved > 0) {
-            broadcastToTable(tableId, {
-                type: "table:update",
-                tableId,
-                players: serializeTablePlayers(table)
-            });
-        }
-
         const pruneResult = pruneDisconnectedRealPlayersBeforeNextRound(table);
-        if (pruneResult.removedCount > 0) {
-            broadcastToTable(tableId, {
-                type: "table:update",
-                tableId,
-                players: serializeTablePlayers(table)
-            });
-        }
+        const balanceSweepResult = enforcePreRoundBalanceEligibility(table);
 
         const realPlayersLeft = table.players.filter(p => !p.isAi).length;
         if (realPlayersLeft === 0) {
-            console.log(`🧹 No real players left on ${tableId} after pre-round prune (pre_round_prune_no_real)`);
-            abortRoundIfNoConnectedRealPlayers(table, "pre_round_prune_no_real");
+            console.log(`🧹 No real players left on ${tableId} after pre-round enforcement (pre_round_enforcement_no_real)`);
+            abortRoundIfNoConnectedRealPlayers(table, "pre_round_enforcement_no_real");
             return;
+        }
+
+        if (deferredRemoved > 0 || pruneResult.removedCount > 0 || balanceSweepResult.changed) {
+            broadcastToTable(tableId, {
+                type: "table:update",
+                tableId,
+                players: serializeTablePlayers(table)
+            });
         }
 
         resetPlayersForNextRound(table); 

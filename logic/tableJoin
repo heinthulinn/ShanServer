@@ -1,9 +1,16 @@
 const { tables } = require("../state/tables");
 const { validUsers } = require("../state/users");
 const { wsSend, broadcastToTable } = require("../ws/sender");
-const { assignBaseAiFirst } = require("./tableHelpers");
+const {
+  assignBaseAiFirst,
+  clearDealerSessionForRemovedPlayer
+} = require("./tableHelpers");
 const { hardResetTable } = require("./roundReset");
 const { buildGameStateSnapshot } = require("./tableSnapshot");
+const {
+  getAuthoritativeUserBalance,
+  syncRealPlayerBalance
+} = require("./balanceAuthority");
 
 function hasStaleTableState(table) {
   return Boolean(
@@ -183,6 +190,7 @@ function leaveTable(ws, d = {}) {
     targetPlayer.ws.username = null;
     targetPlayer.ws = null;
   }
+  clearDealerSessionForRemovedPlayer(table, targetPlayer, isDisconnect ? "disconnect" : "leave");
   table.players = table.players.filter(p => p.username !== username);
 
   if (ws && ws.tableId === tableId && ws.username === username) {
@@ -300,6 +308,15 @@ function joinTable(ws, d) {
     return;
   }
 
+  const resolvedBalance = getAuthoritativeUserBalance(u.username);
+  if (resolvedBalance === null || resolvedBalance < table.minBuyIn) {
+    return wsSend(ws, {
+      type: "tables:join:res",
+      success: false,
+      error: "Insufficient balance for this table"
+    });
+  }
+
   assignBaseAiFirst(table);
 
   const realPlayersCount = table.players.filter(p => !p.isAi).length;
@@ -318,7 +335,7 @@ function joinTable(ws, d) {
   const newPlayer = {
     username: u.username,
     token: u.token,
-    balance: u.balance,
+    balance: resolvedBalance,
     seatId,
     isAi: false,
     ready: false,
@@ -326,6 +343,7 @@ function joinTable(ws, d) {
     socketId: ws._socket?.remotePort
   };
 
+  syncRealPlayerBalance(u.username, resolvedBalance);
   table.players.push(newPlayer);
   newPlayer.ws = ws;
   ws.tableId = table.tableId;

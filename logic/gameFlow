@@ -2,6 +2,7 @@
 const { broadcastToTable } = require("../ws/sender");
 const { tables } = require("../state/tables");
 const WebSocket = require("ws");
+const { syncRealPlayerEntityBalance } = require("./balanceAuthority");
 let startGameFn = null;
 
 function registerStartGame(fn) {
@@ -84,6 +85,7 @@ function assignDealerForRound(table) {
 
         if (candidate.balance >= buyInAmount) {
           candidate.balance -= buyInAmount;
+          syncRealPlayerEntityBalance(candidate);
           table.bankerPot = buyInAmount;
           table.dealerStartPot = buyInAmount;
           table.currentDealerName = candidate.username;
@@ -158,6 +160,7 @@ function finalizeBankerSession(table) {
     const dealer = table.players.find(p => p.username === table.currentDealerName);
     if (dealer && table.bankerPot > 0) {
         dealer.balance += table.bankerPot; // Give remaining pot back to player
+        syncRealPlayerEntityBalance(dealer);
     }
     table.bankerPot = 0;
     table.currentDealerName = null;

@@ -13,6 +13,7 @@ const { handleSocialGift } = require("../social/giftHandler");
 const { handlePlayerMessage } = require("../social/messageHandler");
 const { handleSocialEmoji } = require("../social/emojiHandler");
 const dealerPhase = require("../logic/dealerPhase");
+const { getAuthoritativeUserBalance } = require("../logic/balanceAuthority");
 
 
 function handleWsMessage(ws, raw) {
@@ -115,10 +116,11 @@ function validateUser(ws, d) {
 
 function checkBalance(ws, d) {
   const u = validUsers.find(x => x.username === d.username);
+  const balance = getAuthoritativeUserBalance(d.username);
 
   wsSend(ws, {
     type: "user:balance:res",
-    balance: u ? u.balance : 0,
+    balance: balance ?? 0,
     error: u ? "" : "User not found"
   });
 }

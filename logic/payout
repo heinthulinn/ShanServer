@@ -1,4 +1,5 @@
 // ===== payout.js =====
+const { syncRealPlayerEntityBalance } = require("./balanceAuthority");
 
 /**
  * Collects bets from players at the start of the round.
@@ -20,6 +21,8 @@ function collectBets(players) {
       p.currentBet = p.balance;
       p.balance = 0;
     }
+
+    syncRealPlayerEntityBalance(p);
   });
 }
 
@@ -61,6 +64,7 @@ function payoutWinners(table, players, winners) {
 
       // Return bet + profit
       p.balance += bet + totalStake;
+      syncRealPlayerEntityBalance(p);
 
       dealerDelta -= totalStake;
 
@@ -89,6 +93,7 @@ function payoutWinners(table, players, winners) {
       if (lossExtra > 0) {
         p.balance -= lossExtra;
       }
+      syncRealPlayerEntityBalance(p);
 
       dealerDelta += totalStake;
 
@@ -110,6 +115,7 @@ function payoutWinners(table, players, winners) {
   // ===== FINAL BANKER SETTLEMENT =====
 
   dealer.balance += dealerDelta;
+  syncRealPlayerEntityBalance(dealer);
 
   if (typeof table.bankerPot !== "number") {
     table.bankerPot = 0;

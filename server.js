@@ -20,6 +20,7 @@ const {
     abortRoundIfNoConnectedRealPlayers
 } = require("./logic/roundSafety");
 const { playerReady, handleGameResult } = require("./logic/gameHandlers");
+const { getAuthoritativeUserBalance } = require("./logic/balanceAuthority");
 
 // Hand evaluation / helpers
 const gameHelpers = require("./logic/gameHelpers"); // includes calculateBuResult, decideDealerWinners, etc.
@@ -184,10 +185,11 @@ function validateUser(ws, d) {
 
 function checkBalance(ws, d) {
     const u = validUsers.find(x => x.username === d.username);
+    const balance = getAuthoritativeUserBalance(d.username);
 
     if (!u) return wsSend(ws, { type: "user:balance:res", balance: 0, error: "User not found" });
 
-    wsSend(ws, { type: "user:balance:res", balance: u.balance, error: "" });
+    wsSend(ws, { type: "user:balance:res", balance: balance ?? 0, error: "" });
 }
 
 function sendAiPlayers(ws) {

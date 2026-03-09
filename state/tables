@@ -41,6 +41,7 @@ tableTypes.forEach((t, i) => {
     currentWinners: [],
 
     rtpStats: { totalBets: 0, totalPayouts: 0, dealerIndex: 0 },
+    nextAiReplacementCursor: 0,
 
     betTime: 5,
     betInterval: null,

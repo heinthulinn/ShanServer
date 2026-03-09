@@ -110,6 +110,7 @@ function hardResetTable(table) {
   table.dealerRoundsPlayed = 0;
   table.isWarningActive = false;
   table.dealerWarningRounds = 0;
+  table.nextAiReplacementCursor = 0;
 }
 
 module.exports = {

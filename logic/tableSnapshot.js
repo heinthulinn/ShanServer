@@ -32,6 +32,7 @@ function buildGameStateSnapshot(table) {
     tableId: table.tableId,
     roundId: table.roundId || 0,
     phase: getPhase(table),
+    bankerPot: Number(table.bankerPot) || 0,
     gameInProgress: !!table.gameInProgress,
     joinLocked: !!table.joinLockedForRound,
     players: table.players.map(player => {

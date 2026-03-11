@@ -131,6 +131,7 @@ function assignDealerForRound(table) {
   broadcastToTable(table.tableId, {
     type: "table:full:update",
     tableId: table.tableId,
+    bankerPot: Number(table.bankerPot) || 0,
     gameInProgress: table.gameInProgress,
     joinLocked: !!table.joinLockedForRound,
     players: table.players.map(p => ({
@@ -161,6 +162,14 @@ function finalizeBankerSession(table) {
     if (dealer && table.bankerPot > 0) {
         dealer.balance += table.bankerPot; // Give remaining pot back to player
         syncRealPlayerEntityBalance(dealer);
+        broadcastToTable(table.tableId, {
+          type: "game:dealer:session:settle",
+          seatId: dealer.seatId,
+          username: dealer.username,
+          balance: dealer.balance,
+          returnedPot: table.bankerPot,
+          bankerPot: 0
+        });
     }
     table.bankerPot = 0;
     table.currentDealerName = null;

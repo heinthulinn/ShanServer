@@ -121,6 +121,7 @@ function playerReady(ws, data) {
       wsSend(ws, {
         type: "table:full:update",
         tableId: table.tableId,
+        bankerPot: Number(table.bankerPot) || 0,
         gameInProgress: table.gameInProgress,
         joinLocked: !!table.joinLockedForRound,
         players: table.players.map(p => ({
@@ -144,6 +145,7 @@ function playerReady(ws, data) {
     broadcastToTable(table.tableId, { 
       type: "table:full:update", 
       tableId: table.tableId, 
+      bankerPot: Number(table.bankerPot) || 0,
       gameInProgress: table.gameInProgress, 
       joinLocked: !!table.joinLockedForRound,
       players: table.players.map(p => ({
@@ -199,6 +201,7 @@ function handleGameResult(ws, data)
   broadcastToTable(table.tableId, { 
       type: "table:update", 
       tableId: table.tableId, 
+      bankerPot: Number(table.bankerPot) || 0,
       players: table.players.map(p => ({
           username: p.username,
           balance: p.balance,
@@ -270,6 +273,7 @@ function scheduleNextRound(tableId) {
             broadcastToTable(tableId, {
                 type: "table:update",
                 tableId,
+                bankerPot: Number(table.bankerPot) || 0,
                 players: serializeTablePlayers(table)
             });
         }

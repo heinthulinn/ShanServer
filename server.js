@@ -222,6 +222,7 @@ function playerBet(ws, data) {
 
     broadcastToTable(table.tableId, {
         type: "table:update",
+        bankerPot: Number(table.bankerPot) || 0,
         players: table.players.map(p => ({
             username: p.username,
             seatId: p.seatId,

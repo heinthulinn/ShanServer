@@ -63,6 +63,7 @@ function sendJoinSuccess(ws, table, assignedSeat) {
   wsSend(ws, {
     type: "table:full:update",
     tableId: table.tableId,
+    bankerPot: Number(table.bankerPot) || 0,
     gameInProgress: table.gameInProgress,
     joinLocked: !!table.joinLockedForRound,
     players: table.players.map(p => ({
@@ -82,6 +83,7 @@ function sendJoinSuccess(ws, table, assignedSeat) {
   broadcastToTable(table.tableId, {
     type: "table:update",
     tableId: table.tableId,
+    bankerPot: Number(table.bankerPot) || 0,
     players: serializeTablePlayers(table)
   });
 }
@@ -210,6 +212,7 @@ function leaveTable(ws, d = {}) {
   broadcastToTable(tableId, {
     type: "table:update",
     tableId,
+    bankerPot: Number(table.bankerPot) || 0,
     players: serializeTablePlayers(table)
   });
 

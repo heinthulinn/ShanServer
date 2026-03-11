@@ -43,7 +43,7 @@ function payoutWinners(table, players, winners) {
   // Safety: remove undefined values
   const winnerNames = new Set((winners || []).filter(Boolean));
 
-  const results = [];
+  const playerResults = [];
   let dealerDelta = 0;
 
   players.forEach(p => {
@@ -72,9 +72,9 @@ function payoutWinners(table, players, winners) {
         `💵 WIN → ${p.username} | Bet:${bet} | x${playerMultiplier} | Dealer pays:${totalStake}`
       );
 
-      results.push({
+      playerResults.push({
         username: p.username,
-        seatId: p.seatId,        // 🔥 ADD THIS LINE
+        seatId: p.seatId,
         resultAmount: totalStake,
         balance: p.balance,
         multiplier: playerMultiplier,
@@ -101,9 +101,9 @@ function payoutWinners(table, players, winners) {
         `❌ LOSE → ${p.username} | Bet:${bet} | Dealer x${dealerMultiplier} | Player pays:${totalStake}`
       );
 
-      results.push({
+      playerResults.push({
         username: p.username,
-        seatId: p.seatId,        // 🔥 ADD THIS LINE
+        seatId: p.seatId,
         resultAmount: -totalStake,
         balance: p.balance,
         multiplier: dealerMultiplier,
@@ -112,23 +112,37 @@ function payoutWinners(table, players, winners) {
     }
   });
 
-  // ===== FINAL BANKER SETTLEMENT =====
-
-  dealer.balance += dealerDelta;
-  syncRealPlayerEntityBalance(dealer);
-
   if (typeof table.bankerPot !== "number") {
     table.bankerPot = 0;
   }
 
-  table.bankerPot += dealerDelta;
-  if (table.bankerPot < 0) table.bankerPot = 0;
+  let runningBankerPot = initialFund;
+  const losers = playerResults.filter(r => r.resultAmount < 0);
+  const winnersOnly = playerResults.filter(r => r.resultAmount > 0);
+
+  losers.forEach(result => {
+    const bankerPotDelta = Math.abs(result.resultAmount);
+    runningBankerPot += bankerPotDelta;
+    result.bankerPotDelta = bankerPotDelta;
+    result.bankerPotAfter = runningBankerPot;
+  });
+
+  winnersOnly.forEach(result => {
+    const bankerPotDelta = -result.resultAmount;
+    runningBankerPot += bankerPotDelta;
+    if (runningBankerPot < 0) runningBankerPot = 0;
+    result.bankerPotDelta = bankerPotDelta;
+    result.bankerPotAfter = runningBankerPot;
+  });
+
+  table.bankerPot = runningBankerPot;
 
   dealer.bankerFund = 0;
 
+  const results = [...losers, ...winnersOnly];
   results.push({
     username: dealer.username,
-    seatId: dealer.seatId,       // 🔥 ADD THIS LINE
+    seatId: dealer.seatId,
     resultAmount: dealerDelta,
     balance: dealer.balance,
     bankerPot: table.bankerPot,
@@ -137,7 +151,7 @@ function payoutWinners(table, players, winners) {
   });
 
   console.log(
-    `🃏 Banker (${dealer.username}) | Fund:${initialFund} | P/L:${dealerDelta} | New Balance:${dealer.balance}`
+    `🃏 Banker (${dealer.username}) | Fund:${initialFund} | P/L:${dealerDelta} | Wallet:${dealer.balance} | BankerPot:${table.bankerPot}`
   );
 
   return results;

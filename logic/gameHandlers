@@ -24,6 +24,7 @@ function serializeTablePlayers(table) {
     seatId: p.seatId,
     username: p.username,
     balance: p.balance,
+    profile: p.profile,
     isAi: p.isAi,
     ready: p.ready,
     waiting: p.waiting
@@ -128,6 +129,7 @@ function playerReady(ws, data) {
           seatId: p.seatId,
           username: p.username,
           balance: p.balance,
+          profile: p.profile,
           isAi: p.isAi,
           ready: p.ready,
           waiting: p.waiting,
@@ -152,6 +154,7 @@ function playerReady(ws, data) {
           seatId: p.seatId,
           username: p.username,
           balance: p.balance,
+          profile: p.profile,
           isAi: p.isAi,
           ready: p.ready,
           waiting: p.waiting
@@ -206,6 +209,7 @@ function handleGameResult(ws, data)
           username: p.username,
           balance: p.balance,
           seatId: p.seatId,
+          profile: p.profile,
           isAi: p.isAi,
           ready: p.ready
       }))

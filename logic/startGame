@@ -80,6 +80,7 @@ function startGame(ws, data) {
             name: p.username,
             isAi: p.isAi,
             seatId: p.seatId,
+            profile: p.profile,
             unit: p.balance, // ✅ Picks up balance AFTER 10X deduction
             bet: Number(p.currentBet) || 0,
             cards: null,
@@ -156,6 +157,7 @@ function startGame(ws, data) {
             name: p.name,
             isAi: p.isAi,
             seatId: p.seatId,
+            profile: p.profile,
             unit: p.unit,
             cards: formatCardsForUnity(p.cards),
             points: result.points,

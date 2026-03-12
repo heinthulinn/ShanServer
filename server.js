@@ -227,7 +227,8 @@ function playerBet(ws, data) {
             username: p.username,
             seatId: p.seatId,
             currentBet: p.currentBet,
-            balance: p.balance
+            balance: p.balance,
+            profile: p.profile
         }))
     });
 }

@@ -132,6 +132,7 @@ function buildTableResult(table) {
                 name: p.username,
                 isAi: p.isAi,
                 seatId: p.seatId,
+                profile: p.profile,
                 unit: p.balance,
                 cards: formatCardsForUnity(p.cards),
                 points: hand.points,

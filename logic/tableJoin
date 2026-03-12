@@ -41,6 +41,7 @@ function serializeTablePlayers(table) {
     seatId: p.seatId,
     username: p.username,
     balance: p.balance,
+    profile: p.profile,
     isAi: p.isAi,
     ready: p.ready,
     waiting: p.waiting
@@ -70,6 +71,7 @@ function sendJoinSuccess(ws, table, assignedSeat) {
       seatId: p.seatId,
       username: p.username,
       balance: p.balance,
+      profile: p.profile,
       isAi: p.isAi,
       ready: p.ready,
       waiting: p.waiting
@@ -339,6 +341,7 @@ function joinTable(ws, d) {
     username: u.username,
     token: u.token,
     balance: resolvedBalance,
+    profile: u.profile,
     seatId,
     isAi: false,
     ready: false,

@@ -138,6 +138,7 @@ function assignDealerForRound(table) {
       seatId: p.seatId,
       username: p.username,
       balance: p.balance,
+      profile: p.profile,
       isAi: p.isAi,
       isDealer: p.isDealer
     }))

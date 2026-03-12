@@ -4,6 +4,7 @@ function createAiPlayer(ai, seatId) {
   return {
     username: ai.name,
     balance: ai.unit,
+    profile: ai.profile,
     seatId,
     isAi: true,
     ready: true,

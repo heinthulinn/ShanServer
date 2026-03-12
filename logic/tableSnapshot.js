@@ -54,6 +54,7 @@ function buildGameStateSnapshot(table) {
       return {
         seatId: player.seatId,
         username: player.username,
+        profile: player.profile,
         waiting: !!player.waiting,
         leaveAfterRound: !!player.leaveAfterRound,
         isDealer: !!player.isDealer,

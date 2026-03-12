@@ -1,16 +1,16 @@
 // ====== MOCK USERS ======
 const validUsers = [
-  { username: "test1", token: "1234", balance: 100000 },
-  { username: "admin", token: "abcd", balance: 50000 },
-  { username: "guest", token: "guest123", balance: 10000 }
+  { username: "test1", token: "1234", balance: 100000, profile: "1" },
+  { username: "admin", token: "abcd", balance: 50000, profile: "2" },
+  { username: "guest", token: "guest123", balance: 10000, profile: "3" }
 ];
 
 // ====== AI PLAYERS ======
 const aiPlayersList = [
-    { name: "AI_Kyaw", unit: 903993, isAi: true },
-    { name: "AI_Maung", unit: 8900, isAi: true },
-    { name: "AI_Hnin", unit: 54357, isAi: true },
-    { name: "AI_ZoeGyi", unit: 54564, isAi: true }
+    { name: "AI_Kyaw", unit: 903993, isAi: true, profile: "11" },
+    { name: "AI_Maung", unit: 8900, isAi: true, profile: "12" },
+    { name: "AI_Hnin", unit: 54357, isAi: true, profile: "13" },
+    { name: "AI_ZoeGyi", unit: 54564, isAi: true, profile: "14" }
   ];
 
 module.exports = {validUsers,aiPlayersList};

@@ -3,6 +3,7 @@ const { broadcastToTable } = require("../ws/sender");
 const { tables } = require("../state/tables");
 const WebSocket = require("ws");
 const { syncRealPlayerEntityBalance } = require("./balanceAuthority");
+const { shanRealPlayerDealerOnly } = require("../config/game");
 let startGameFn = null;
 
 function registerStartGame(fn) {
@@ -42,11 +43,27 @@ function autoStart(table) {
   startGameForTable(table);
 }
 
+function getDealerCandidates(table, buyInAmount) {
+  const connectedRealPlayers = table.players.filter(
+    (player) => !player.isAi && !player.waiting && player.ws && player.ws.readyState === WebSocket.OPEN
+  );
+
+  if (!shanRealPlayerDealerOnly) {
+    return table.players.filter((player) => !player.waiting);
+  }
+
+  if (buyInAmount == null) {
+    return connectedRealPlayers;
+  }
+
+  return connectedRealPlayers.filter((player) => player.balance >= buyInAmount);
+}
+
 function assignDealerForRound(table) {
-  if (!table.rtpStats) return;
+  if (!table.rtpStats) return false;
 
   const activePlayers = table.players.filter(p => !p.waiting);
-  if (!activePlayers.length) return;
+  if (!activePlayers.length) return false;
 
   const minBet = table.minBet || table.defaultBet;
   const buyInAmount = minBet * 10;
@@ -62,26 +79,32 @@ function assignDealerForRound(table) {
       console.log(`🔄 Rotating Dealer: Reason(Warning:${warningExpired}, Normal:${normalSessionExpired}, Broke:${isBroke})`);
       finalizeBankerSession(table);
       table.dealerRoundsPlayed = 0; 
-  } 
- // --- FORCED TEST DEALER HACK ---
-/* const humanPlayer = table.players.find(p => !p.isAi); // Find you (the human)
- if (humanPlayer) {
-     table.currentDealerName = humanPlayer.username;
-     table.bankerPot = 999999; // Give huge balance so it never expires
-     table.dealerStartPot = 999999;
- } */
- // -------------------------------
+  }
 
   // --- DEALER SELECTION ---
   if (!table.bankerPot || table.bankerPot <= 0) {
       if (table.currentDealerName) finalizeBankerSession(table);
 
+      const dealerCandidates = getDealerCandidates(table, buyInAmount);
+      if (!dealerCandidates.length) {
+        const connectedRealPlayers = getDealerCandidates(table);
+        console.log(
+          `[DEALER_BLOCKED] table=${table.tableId} realOnly=${shanRealPlayerDealerOnly} connectedReal=${connectedRealPlayers.length} eligibleReal=${dealerCandidates.length} buyIn=${buyInAmount} players=${table.players
+            .map((player) => `${player.username}:${player.balance}:${player.isAi ? "ai" : "real"}:${player.waiting ? "waiting" : "active"}:${player.ws && player.ws.readyState === WebSocket.OPEN ? "connected" : "offline"}`)
+            .join(",")}`
+        );
+        table.players.forEach((player) => {
+          player.isDealer = false;
+        });
+        return false;
+      }
+
       let startIndex = table.rtpStats.dealerIndex || 0;
       let dealerFound = false;
 
-      for (let i = 0; i < activePlayers.length; i++) {
-        const index = (startIndex + i) % activePlayers.length;
-        const candidate = activePlayers[index];
+      for (let i = 0; i < dealerCandidates.length; i++) {
+        const index = (startIndex + i) % dealerCandidates.length;
+        const candidate = dealerCandidates[index];
 
         if (candidate.balance >= buyInAmount) {
           candidate.balance -= buyInAmount;
@@ -98,12 +121,21 @@ function assignDealerForRound(table) {
           break;
         }
       }
-      if (!dealerFound) return;
+      if (!dealerFound) {
+        console.log(
+          `[DEALER_BLOCKED] table=${table.tableId} realOnly=${shanRealPlayerDealerOnly} reason=no_candidate_after_rotation buyIn=${buyInAmount}`
+        );
+        return false;
+      }
   }
 
   // Set flags
   table.players.forEach(p => p.isDealer = (p.username === table.currentDealerName));
   const dealer = table.players.find(p => p.isDealer);
+  if (!dealer) {
+    console.log(`[DEALER_BLOCKED] table=${table.tableId} reason=missing_assigned_dealer currentDealerName=${table.currentDealerName}`);
+    return false;
+  }
   dealer.bankerFund = table.bankerPot;
 
   // 1. Increment standard rounds
@@ -156,6 +188,8 @@ function assignDealerForRound(table) {
       roundsPlayed: table.dealerRoundsPlayed 
     }
   });
+
+  return true;
 }
 
 function finalizeBankerSession(table) {
@@ -180,13 +214,21 @@ function finalizeBankerSession(table) {
 }
 
 function rotateDealer(table) {
-  const activePlayers = table.players.filter(p => !p.waiting);
-  if (!activePlayers.length) return;
+  const minBet = table.minBet || table.defaultBet;
+  const buyInAmount = minBet * 10;
+  const dealerCandidates = getDealerCandidates(table, buyInAmount);
+  if (!dealerCandidates.length) {
+    console.log(
+      `[DEALER_ROTATE_BLOCKED] table=${table.tableId} realOnly=${shanRealPlayerDealerOnly} buyIn=${buyInAmount}`
+    );
+    table.rtpStats.dealerIndex = 0;
+    return;
+  }
 
   if (typeof table.rtpStats.dealerIndex !== "number") {
     table.rtpStats.dealerIndex = 0;
   } else {
-    table.rtpStats.dealerIndex = (table.rtpStats.dealerIndex + 1) % activePlayers.length;
+    table.rtpStats.dealerIndex = (table.rtpStats.dealerIndex + 1) % dealerCandidates.length;
   }
   console.log(`🔄 DEALER ROTATED → index ${table.rtpStats.dealerIndex}`);
 }
@@ -202,9 +244,22 @@ function startGameForTable(table) {
   const oldDealerName = table.currentDealerName;
 
   // 2. Run the assignment (this updates table.currentDealerName)
-  assignDealerForRound(table);
+  const dealerAssigned = assignDealerForRound(table);
+  if (!dealerAssigned) {
+    table.roundInProgress = false;
+    table.gameInProgress = false;
+    table.joinLockedForRound = false;
+    return;
+  }
 
   const newDealer = table.players.find(p => p.username === table.currentDealerName);
+  if (!newDealer) {
+    table.roundInProgress = false;
+    table.gameInProgress = false;
+    table.joinLockedForRound = false;
+    console.log(`[DEALER_BLOCKED] table=${table.tableId} reason=assigned_dealer_missing_before_countdown`);
+    return;
+  }
   
   // 3. Determine delay
   let startDelay = 0;

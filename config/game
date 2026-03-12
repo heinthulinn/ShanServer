@@ -1,4 +1,4 @@
-const shanRealPlayerDealerOnly = true;
+const shanRealPlayerDealerOnly = false;
 
 module.exports = {
   shanRealPlayerDealerOnly
